@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Content-Security-Policy" content="{{csp}}"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>DPA-REX-Refacror</title>
+  <link rel="stylesheet" href="{{cssUri}}"/>
+</head>
+<body>
+  <h1>DPA-REX-Refacror</h1>
+
+  <!-- Pattern & Replacement -->
+  <div class="card standalone" data-collapse-key="pattern">
+      <div class="card-hdr">
+        <h2>Pattern &amp; Replacement</h2>
+        <span class="card-toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div id="steps-container"></div>
+        <div class="btn-row btn-row-addstep">
+          <button id="btn-add-step" class="sec">+ Add step</button>
+        </div>
+
+        <div class="field">
+          <label>Scope</label>
+          <select id="scope">
+            <option value="currentFile">Current file</option>
+            <option value="selection">Current selection</option>
+            <option value="openFiles">Open files</option>
+            <option value="workspaceFolder" selected>Workspace folder</option>
+            <option value="glob">Custom glob</option>
+          </select>
+        </div>
+
+        <div class="field hidden" id="glob-row">
+          <label>Glob</label>
+          <input type="text" id="glob" value="**/*.ts" spellcheck="false" autocomplete="off"/>
+        </div>
+
+        <div class="field hidden" id="filetypes-row">
+          <label>Extensions</label>
+          <input type="text" id="filetypes" placeholder="e.g. ts, js, tsx" spellcheck="false" autocomplete="off"/>
+        </div>
+
+        <div class="field hidden" id="exclude-row">
+          <label>Exclude</label>
+          <input type="text" id="exclude" placeholder="e.g. **/generated/**" spellcheck="false" autocomplete="off"/>
+        </div>
+
+        <div id="error" class="error"></div>
+        <div id="apply-ok" class="apply-ok"></div>
+
+        <div class="btn-row">
+          <button id="btn-preview">Preview matches</button>
+          <button id="btn-apply" class="sec">Apply replace</button>
+          <label class="ctx-ctrl">Context lines <input type="number" id="ctx-lines" value="2" min="0" max="10"/></label>
+        </div>
+        <div class="btn-row btn-row-patterns">
+          <button id="btn-save-pattern" class="sec">Save pattern</button>
+          <button id="btn-load-pattern" class="sec">Load pattern</button>
+          <button id="btn-delete-pattern" class="danger">Delete pattern</button>
+        </div>
+      </div>
+    </div>
+
+  <!-- Preview results -->
+  <div class="card standalone" id="results" data-collapse-key="results">
+    <div class="results-hdr card-hdr">
+      <h2>Preview</h2>
+      <div class="results-hdr-right">
+        <button id="btn-apply-pipeline" class="sec hidden">Apply pipeline</button>
+        <button id="btn-replace-sel" class="sec hidden">Replace selected (0)</button>
+        <span class="card-toggle">&#9660;</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="loading" class="hidden"><span class="spinner"></span><span>Searching&#8230;</span></div>
+      <div class="summary" id="summary"></div>
+      <div id="diff-container" class="hidden"></div>
+      <div id="match-table-wrap" class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th class="cb-th"><input type="checkbox" id="select-all" title="Select / deselect all"/></th>
+              <th style="width:56px">Line</th>
+              <th>Match &#8594; Replacement</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+
+      <div id="detail">
+        <div class="detail-hdr">
+          <span id="detail-hdr-text"></span>
+          <button id="btn-apply-single" class="sec detail-apply-btn">Apply this</button>
+        </div>
+        <div class="detail-body">
+          <div class="detail-block" id="ctx-block">
+            <div class="detail-lbl">Context</div>
+            <div class="ctx-view" id="ctx-view"></div>
+          </div>
+          <div class="detail-block">
+            <div class="detail-lbl">Match</div>
+            <div class="detail-val old" id="detail-match"></div>
+          </div>
+          <div class="detail-block" id="repl-pattern-block">
+            <div class="detail-lbl">Replacement pattern</div>
+            <div class="detail-val" id="detail-repl-pattern"></div>
+          </div>
+          <div class="detail-block">
+            <div class="detail-lbl">Result</div>
+            <div class="detail-val new" id="detail-repl"></div>
+          </div>
+          <div id="groups-legend" class="groups-legend"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="card standalone" id="history-card" data-collapse-key="history">
+    <div class="card-hdr">
+      <h2>History</h2>
+      <div class="results-hdr-right">
+        <button id="btn-clear-history" class="danger hidden">Clear</button>
+        <span class="card-toggle">&#9660;</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <script src="{{jsUri}}"></script>
+</body>
+</html>
