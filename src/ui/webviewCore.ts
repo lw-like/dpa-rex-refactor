@@ -7,6 +7,7 @@ import {
     previewPipeline, applyPipeline,
     Scope, MatchEntry, EngineOptions,
 } from '../replaceEngine';
+import { extractPatterns } from '../patternExtractor';
 
 export interface WebviewMessage {
     type: string;
@@ -30,6 +31,8 @@ export interface WebviewMessage {
 }
 
 export class MessageHandler {
+    private cancelToken: { cancelled: boolean } | null = null;
+
     constructor(
         private store: PatternStore,
         private readonly post: (msg: object) => void,
@@ -37,6 +40,20 @@ export class MessageHandler {
 
     pushHistory(): void {
         this.post({ type: 'history', entries: this.store.getHistory() });
+    }
+
+    pushPendingPattern(): void {
+        const pending = this.store.consumePendingPattern();
+        if (pending) { this.post({ type: 'loadPatternResult', pattern: pending }); }
+    }
+
+    switchToPlanner(text: string): void {
+        // Normalize CRLF so the string matches what the browser produces
+        // from innerHTML (which strips \r), keeping textOffset indices consistent.
+        const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const suggestions = normalized ? extractPatterns(normalized) : [];
+        this.post({ type: 'switchTab', tab: 'planner' });
+        this.post({ type: 'sampleResult', text: normalized, suggestions });
     }
 
     async handle(msg: WebviewMessage): Promise<void> {
@@ -109,12 +126,20 @@ export class MessageHandler {
                 break;
             }
 
+            case 'cancelPreview':
+                if (this.cancelToken) { this.cancelToken.cancelled = true; }
+                break;
+
             case 'preview': {
+                if (this.cancelToken) { this.cancelToken.cancelled = true; }
+                const token = { cancelled: false };
+                this.cancelToken = token;
                 try {
                     const steps = this.resolveSteps(msg);
                     this.validateSteps(steps, msg);
                     const opts = await this.buildEngineOpts(msg);
-                    if (opts === null) { break; }
+                    if (opts === null) { this.cancelToken = null; break; }
+                    opts.cancelToken = token;
                     if (steps.length > 1) {
                         const result = await previewPipeline(steps, msg.scope as Scope, msg.glob ?? '', msg.contextLines ?? 3, opts);
                         this.post({ type: 'pipelinePreviewResult', ...result });
@@ -124,7 +149,13 @@ export class MessageHandler {
                         this.post({ type: 'previewResult', ...result });
                     }
                 } catch (e: unknown) {
-                    this.postError(e instanceof Error ? e.message : String(e));
+                    if (e instanceof Error && e.message === '__SEARCH_CANCELLED__') {
+                        this.post({ type: 'searchCancelled' });
+                    } else {
+                        this.postError(e instanceof Error ? e.message : String(e));
+                    }
+                } finally {
+                    if (this.cancelToken === token) { this.cancelToken = null; }
                 }
                 break;
             }
@@ -169,6 +200,14 @@ export class MessageHandler {
                         this.recordHistory(msg, result.replacements, result.filesModified, result.files, result.changes);
                     }
                 } catch (e: unknown) { this.postError(e instanceof Error ? e.message : String(e)); }
+                break;
+            }
+
+            case 'reanalyze': {
+                const editor = vscode.window.activeTextEditor;
+                const text = (editor && !editor.selection.isEmpty)
+                    ? editor.document.getText(editor.selection) : '';
+                this.switchToPlanner(text);
                 break;
             }
 
@@ -268,9 +307,20 @@ export class MessageHandler {
                 this.postError('No text selected. Make a selection in the editor first.');
                 return null;
             }
+            // Compute offsets into the CRLF-normalized text that readFileText produces.
+            // editor.document.offsetAt() counts \r\n as 2, but readFileText normalizes
+            // \r\n to \n, so we count each line ending as 1 to stay consistent.
+            const normalizePos = (pos: vscode.Position): number => {
+                let offset = pos.character;
+                for (let i = 0; i < pos.line; i++) {
+                    offset += editor.document.lineAt(i).text.length + 1;
+                }
+                return offset;
+            };
+            const sel = editor.selection;
             opts.selectionRange = {
-                startOffset: editor.document.offsetAt(editor.selection.start),
-                endOffset:   editor.document.offsetAt(editor.selection.end),
+                startOffset: normalizePos(sel.start),
+                endOffset:   normalizePos(sel.end),
             };
         }
         return opts;

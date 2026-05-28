@@ -16,6 +16,7 @@ export class ReplacePanel {
         if (ReplacePanel.currentPanel) {
             ReplacePanel.currentPanel.panel.reveal(column);
             ReplacePanel.currentPanel.handler.pushHistory();
+            ReplacePanel.currentPanel.handler.pushPendingPattern();
             return;
         }
 
@@ -45,7 +46,7 @@ export class ReplacePanel {
             this.disposables
         );
 
-        setTimeout(() => this.handler.pushHistory(), 300);
+        setTimeout(() => { this.handler.pushHistory(); this.handler.pushPendingPattern(); }, 300);
     }
 
     dispose(): void {

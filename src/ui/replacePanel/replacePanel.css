@@ -182,6 +182,7 @@ button.danger:hover:not(:disabled) { background: rgba(241,76,76,0.1); }
   font-size: 0.87em;
   padding: 14px 0;
 }
+#btn-cancel-search { margin-left: auto; }
 #loading.hidden { display: none; }
 .spinner {
   width: 13px;
@@ -669,9 +670,285 @@ tbody tr:hover .open-match-btn { opacity: 1; }
   white-space: nowrap;
 }
 
-/* Compact mode — narrow sidebar */
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  margin: -16px -16px 16px -16px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--vscode-panel-border, #454545);
+  background: var(--vscode-sideBar-background, transparent);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.tab-btn {
+  background: transparent;
+  color: var(--vscode-tab-inactiveForeground, var(--vscode-descriptionForeground));
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 0.87em;
+  font-weight: 500;
+  border-radius: 0;
+  margin-bottom: -1px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.tab-btn:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+.tab-btn.active {
+  color: var(--vscode-tab-activeForeground, var(--vscode-foreground));
+  border-bottom-color: var(--vscode-focusBorder, var(--vscode-button-background, #0e639c));
+}
+
+.tab-pane { display: block; }
+.tab-pane.hidden { display: none !important; }
+
+/* ── Planner: interactive sample ─────────────────────────────────────────── */
+
+.hdr-actions { display: flex; gap: 6px; align-items: center; }
+.btn-sm { padding: 3px 9px; font-size: 0.82em; }
+
+.planner-hint {
+  font-size: 0.82em;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+
+.sample-interactive {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.84em;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 2px;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 4px;
+  cursor: text;
+  user-select: text;
+}
+
+/* Marked segment highlight types */
+.seg-lit {
+  background: rgba(0, 120, 212, 0.22);
+  border-bottom: 2px solid rgba(0, 120, 212, 0.6);
+  border-radius: 2px 2px 0 0;
+}
+.seg-cap {
+  background: rgba(255, 165, 0, 0.28);
+  border-bottom: 2px solid rgba(255, 165, 0, 0.65);
+  border-radius: 2px 2px 0 0;
+}
+.seg-any {
+  background: rgba(150, 150, 150, 0.18);
+  border-bottom: 2px solid rgba(150, 150, 150, 0.45);
+  border-radius: 2px 2px 0 0;
+}
+.seg-attr {
+  background: rgba(0, 183, 195, 0.22);
+  border-bottom: 2px solid rgba(0, 183, 195, 0.6);
+  border-radius: 2px 2px 0 0;
+}
+.seg-must {
+  background: rgba(40, 167, 80, 0.22);
+  border-bottom: 2px solid rgba(40, 167, 80, 0.6);
+  border-radius: 2px 2px 0 0;
+}
+/* Pending selection preview — same color as the target mark type, but dashed */
+.seg-preview {
+  opacity: 0.7;
+  border-bottom-style: dashed;
+}
+
+/* Regions list below the sample */
+.regions-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+
+.region-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.83em;
+}
+.region-badge {
+  font-size: 0.74em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  font-family: var(--vscode-font-family);
+}
+.region-badge.rlit  { background: rgba(0, 120, 212, 0.22);  border: 1px solid rgba(0, 120, 212, 0.5);   color: var(--vscode-foreground); }
+.region-badge.rcap  { background: rgba(255, 165, 0, 0.28);  border: 1px solid rgba(255, 165, 0, 0.55);  color: var(--vscode-foreground); }
+.region-badge.rattr { background: rgba(0, 183, 195, 0.22);  border: 1px solid rgba(0, 183, 195, 0.5);   color: var(--vscode-foreground); }
+.region-badge.rany  { background: rgba(150, 150, 150, 0.18); border: 1px solid rgba(150, 150, 150, 0.4); color: var(--vscode-foreground); }
+.region-badge.rmust { background: rgba(40, 167, 80, 0.22);  border: 1px solid rgba(40, 167, 80, 0.5);   color: var(--vscode-foreground); }
+
+.region-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+}
+.region-del {
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 1.05em;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.region-del:hover { color: var(--vscode-errorForeground, #f14c4c); background: transparent; }
+
+/* Floating mark toolbar */
+.mark-toolbar {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  gap: 4px;
+  padding: 5px 7px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, #454545));
+  border-radius: 4px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+.mark-toolbar.hidden { display: none !important; }
+
+.mark-btn {
+  padding: 3px 11px;
+  font-size: 0.82em;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--vscode-font-family);
+}
+.mark-lit {
+  background: rgba(0, 120, 212, 0.25);
+  color: var(--vscode-foreground);
+  border: 1px solid rgba(0, 120, 212, 0.55);
+}
+.mark-lit:hover { background: rgba(0, 120, 212, 0.42); }
+.mark-cap {
+  background: rgba(255, 165, 0, 0.28);
+  color: var(--vscode-foreground);
+  border: 1px solid rgba(255, 165, 0, 0.55);
+}
+.mark-cap:hover { background: rgba(255, 165, 0, 0.45); }
+.mark-any {
+  background: rgba(150, 150, 150, 0.18);
+  color: var(--vscode-foreground);
+  border: 1px solid rgba(150, 150, 150, 0.4);
+}
+.mark-any:hover { background: rgba(150, 150, 150, 0.32); }
+.mark-attr {
+  background: rgba(0, 183, 195, 0.25);
+  color: var(--vscode-foreground);
+  border: 1px solid rgba(0, 183, 195, 0.55);
+}
+.mark-attr:hover { background: rgba(0, 183, 195, 0.42); }
+.mark-must {
+  background: rgba(40, 167, 80, 0.25);
+  color: var(--vscode-foreground);
+  border: 1px solid rgba(40, 167, 80, 0.55);
+}
+.mark-must:hover { background: rgba(40, 167, 80, 0.42); }
+
+mark {
+  background: rgba(255, 165, 0, 0.45);
+  color: inherit;
+  border-radius: 2px;
+  outline: 1px solid rgba(255, 165, 0, 0.6);
+}
+
+/* ── Planner: suggestion cards ───────────────────────────────────────────── */
+
+.suggestion-card {
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 3px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.suggestion-card:last-child { margin-bottom: 0; }
+
+.sug-hdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.sug-label { font-weight: 600; font-size: 0.9em; }
+.sug-match-count {
+  font-size: 0.78em;
+  color: var(--vscode-gitDecoration-addedResourceForeground, #73c991);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sug-desc {
+  font-size: 0.82em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+}
+.sug-pattern {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.83em;
+  background: var(--vscode-input-background);
+  border-radius: 2px;
+  padding: 3px 7px;
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+.sug-repl {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.82em;
+  color: var(--vscode-gitDecoration-addedResourceForeground, #73c991);
+  margin-bottom: 6px;
+}
+.sug-actions { display: flex; gap: 6px; margin-top: 8px; }
+.sug-actions button { padding: 3px 10px; font-size: 0.82em; }
+
+.sug-count-badge {
+  font-size: 0.78em;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #ccc);
+}
+
+/* ── Planner: custom match count ─────────────────────────────────────────── */
+
+.match-count { font-size: 0.84em; margin-right: auto; }
+.match-count.has-matches { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
+.match-count.no-matches  { color: var(--vscode-errorForeground, #f14c4c); }
+
+/* ── Planner loading ─────────────────────────────────────────────────────── */
+
+#planner-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.87em;
+  padding: 8px 0;
+}
+#planner-loading.hidden { display: none; }
+
+/* ── Compact mode — narrow sidebar ───────────────────────────────────────── */
 body.compact { padding: 8px; }
-body.compact h1 { font-size: 1em; margin-bottom: 10px; }
+body.compact .tab-bar { margin: -8px -8px 12px -8px; }
 body.compact .card { padding: 10px 8px; }
 body.compact .form-row { flex-direction: column; gap: 8px; }
 body.compact .field { flex-direction: column; align-items: stretch; gap: 3px; }

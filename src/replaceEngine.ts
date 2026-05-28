@@ -41,6 +41,7 @@ export interface EngineOptions {
     fileTypes?: string;
     excludePattern?: string;
     selectionRange?: { startOffset: number; endOffset: number };
+    cancelToken?: { cancelled: boolean };
 }
 
 // ─── Pipeline result types ────────────────────────────────────────────────────
@@ -74,6 +75,14 @@ export interface PipelinePreviewResult {
 const MAX_REVERT_CHANGES = 500;
 const BATCH_SIZE = 50;
 const decoder = new TextDecoder();
+
+const CANCEL_MSG = '__SEARCH_CANCELLED__';
+function yieldToEventLoop(): Promise<void> {
+    return new Promise<void>(resolve => setImmediate(resolve));
+}
+function checkCancelled(token: { cancelled: boolean } | undefined): void {
+    if (token?.cancelled) { throw new Error(CANCEL_MSG); }
+}
 
 async function readFileText(uri: vscode.Uri): Promise<string | null> {
     const bytes = await vscode.workspace.fs.readFile(uri);
@@ -233,11 +242,18 @@ export async function previewReplace(
     const seenFiles = new Set<string>();
 
     for (let b = 0; b < files.length; b += BATCH_SIZE) {
+        // Yield to the event loop so pending IPC messages (e.g. cancelPreview) are
+        // processed before we check the flag — microtask continuations alone are not
+        // enough because IPC callbacks are macrotasks.
+        await yieldToEventLoop();
+        checkCancelled(opts.cancelToken);
+
         const texts = await Promise.all(files.slice(b, b + BATCH_SIZE).map(async uri => {
             try { return { uri, text: await readFileText(uri) }; } catch { return null; }
         }));
 
         for (const item of texts) {
+            checkCancelled(opts.cancelToken); // check between every file in the batch
             if (!item?.text) { continue; }
             const { uri, text } = item;
             const starts = buildLineStarts(text);
@@ -572,10 +588,14 @@ export async function previewPipeline(
     const fileDiffs: FileDiff[] = [];
 
     for (let b = 0; b < files.length; b += BATCH_SIZE) {
+        await yieldToEventLoop();
+        checkCancelled(opts.cancelToken);
+
         const texts = await Promise.all(files.slice(b, b + BATCH_SIZE).map(async uri => {
             try { return { uri, text: await readFileText(uri) }; } catch { return null; }
         }));
         for (const item of texts) {
+            checkCancelled(opts.cancelToken);
             if (!item?.text) { continue; }
             const { uri, text } = item;
             const { finalText, stepCounts } = applyPipelineToText(steps, text);

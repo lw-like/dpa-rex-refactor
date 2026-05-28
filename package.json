@@ -8,6 +8,7 @@
   "categories": ["Other"],
   "activationEvents": [
     "onCommand:dpa-rex-refacror.openPanel",
+    "onCommand:dpa-rex-refacror.analyzeSelection",
     "onView:dpa-rex-refacror.sidebar"
   ],
   "main": "./out/extension.js",
@@ -34,6 +35,10 @@
       {
         "command": "dpa-rex-refacror.openPanel",
         "title": "DPA-REX-Refacror: Open Panel"
+      },
+      {
+        "command": "dpa-rex-refacror.analyzeSelection",
+        "title": "Analyze Selection — Regex Planner"
       }
     ],
     "configuration": {
@@ -54,8 +59,14 @@
     },
     "menus": {
       "commandPalette": [
+        { "command": "dpa-rex-refacror.openPanel" },
+        { "command": "dpa-rex-refacror.analyzeSelection", "when": "editorHasSelection" }
+      ],
+      "editor/context": [
         {
-          "command": "dpa-rex-refacror.openPanel"
+          "command": "dpa-rex-refacror.analyzeSelection",
+          "when": "editorHasSelection",
+          "group": "dpa-rex-refacror@1"
         }
       ]
     }

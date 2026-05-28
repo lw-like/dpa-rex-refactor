@@ -1,5 +1,16 @@
 const vscode = acquireVsCodeApi();
 
+// ─── Tab switching ────────────────────────────────────────────────────────────
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 // Each step: { pattern: string, flags: Set<string>, replacement: string }
@@ -51,12 +62,46 @@ const replPatBlockEl         = $('repl-pattern-block');
 const groupsLegendEl         = $('groups-legend');
 const ctxLinesEl             = $('ctx-lines');
 const loadingEl              = $('loading');
+const btnCancelSearchEl      = $('btn-cancel-search');
 const btnPreviewEl           = $('btn-preview');
 const selectAllEl            = $('select-all');
 const btnReplSelEl           = $('btn-replace-sel');
 const btnApplyPipelineEl     = $('btn-apply-pipeline');
 const historyListEl          = $('history-list');
 const btnClearHistoryEl      = $('btn-clear-history');
+
+// ─── Planner element refs ─────────────────────────────────────────────────────
+
+const plannerLoadingEl   = $('planner-loading');
+const sampleEmptyEl      = $('sample-empty');
+const plannerHintEl      = $('planner-hint');
+const sampleInteractiveEl = $('sample-interactive');
+const regionsListEl      = $('regions-list');
+const reanalyzeBtn       = $('btn-reanalyze');
+const btnClearRegions    = $('btn-clear-regions');
+const markToolbarEl      = $('mark-toolbar');
+const btnMarkLiteral     = $('btn-mark-literal');
+const btnMarkCapture     = $('btn-mark-capture');
+const btnMarkAttr        = $('btn-mark-attr');
+const btnMarkSkip        = $('btn-mark-skip');
+const btnMarkMust        = $('btn-mark-must');
+const suggestionsEl      = $('suggestions');
+const noSuggestEl        = $('no-suggestions');
+const sugCountBadgeEl    = $('sug-count');
+const customPatternEl    = $('custom-pattern');
+const customReplEl       = $('custom-replacement');
+const customMatchCountEl = $('custom-match-count');
+const useCustomBtn       = $('btn-use-custom');
+
+let sampleText       = '';
+let customFlags      = new Set(['g', 'i']);
+let activeSuggestions = [];
+
+// Region marking state
+let regions      = [];   // { id, start, end, type: 'literal'|'capture'|'skip'|'mustcontain' }
+let nextRid      = 0;
+let pendingSel   = null; // { start, end } — saved on mouseup, used by toolbar buttons
+let previewType  = 'literal'; // last-used mark type, shown as preview while toolbar is open
 
 // ─── Compact layout ───────────────────────────────────────────────────────────
 
@@ -173,6 +218,7 @@ updateScopeVisibility();
 // ─── Buttons ──────────────────────────────────────────────────────────────────
 
 $('btn-preview').addEventListener('click', () => dispatch('preview'));
+btnCancelSearchEl.addEventListener('click', () => vscode.postMessage({ type: 'cancelPreview' }));
 $('btn-apply').addEventListener('click',   () => dispatch('apply'));
 $('btn-add-step').addEventListener('click', addStep);
 
@@ -421,6 +467,348 @@ function esc(s) {
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ─── Planner: region helpers ─────────────────────────────────────────────────
+
+function escapeRe(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeCharClass(c) {
+    return c.replace(/[\\^\]-]/g, '\\$&');
+}
+
+// Map a DOM text position (node + offset) to a character offset within container.
+// Uses Range.toString() which correctly ignores HTML tags.
+function textOffset(container, node, offset) {
+    const r = document.createRange();
+    r.setStart(container, 0);
+    r.setEnd(node, offset);
+    return r.toString().length;
+}
+
+// ─── Planner: mark toolbar ────────────────────────────────────────────────────
+
+function showMarkToolbar(selRect) {
+    // Replace native selection with a colored preview immediately
+    window.getSelection()?.removeAllRanges();
+    renderInteractiveSample({ id: '__preview__', ...pendingSel, type: previewType });
+
+    markToolbarEl.classList.remove('hidden');
+    const tw = markToolbarEl.offsetWidth || 240;
+    const th = markToolbarEl.offsetHeight || 36;
+    let top  = selRect.top - th - 8;
+    let left = selRect.left + (selRect.width - tw) / 2;
+    if (top < 4)                           { top  = selRect.bottom + 8; }
+    if (left < 4)                          { left = 4; }
+    if (left + tw > window.innerWidth - 4) { left = window.innerWidth - tw - 4; }
+    markToolbarEl.style.top  = top  + 'px';
+    markToolbarEl.style.left = left + 'px';
+}
+
+function hideMarkToolbar(skipRender = false) {
+    markToolbarEl.classList.add('hidden');
+    pendingSel = null;
+    if (!skipRender) { renderInteractiveSample(); }
+}
+
+// Prevent button mousedown from stealing the text selection
+[btnMarkLiteral, btnMarkCapture, btnMarkAttr, btnMarkSkip, btnMarkMust].forEach(b =>
+    b.addEventListener('mousedown', e => e.preventDefault())
+);
+
+btnMarkLiteral.addEventListener('click', () => applyMark('literal'));
+btnMarkCapture.addEventListener('click', () => applyMark('capture'));
+btnMarkAttr.addEventListener('click',    () => applyMark('captureattr'));
+btnMarkSkip.addEventListener('click',    () => applyMark('skip'));
+btnMarkMust.addEventListener('click',    () => applyMark('mustcontain'));
+
+// Live-preview the mark color when hovering over toolbar buttons
+const _markTypeOf = {
+    'btn-mark-literal': 'literal',
+    'btn-mark-capture': 'capture',
+    'btn-mark-attr':    'captureattr',
+    'btn-mark-skip':    'skip',
+    'btn-mark-must':    'mustcontain',
+};
+[btnMarkLiteral, btnMarkCapture, btnMarkAttr, btnMarkSkip, btnMarkMust].forEach(btn => {
+    btn.addEventListener('mouseenter', () => {
+        if (!pendingSel) { return; }
+        previewType = _markTypeOf[btn.id];
+        renderInteractiveSample({ id: '__preview__', ...pendingSel, type: previewType });
+    });
+});
+
+sampleInteractiveEl.addEventListener('mouseup', () => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) { hideMarkToolbar(); return; }
+    if (!sampleInteractiveEl.contains(sel.anchorNode)) { return; }
+
+    let s = textOffset(sampleInteractiveEl, sel.anchorNode, sel.anchorOffset);
+    let e = textOffset(sampleInteractiveEl, sel.focusNode,  sel.focusOffset);
+    if (s > e) { [s, e] = [e, s]; }
+    if (s === e) { hideMarkToolbar(); return; }
+
+    // Clamp to valid text range (guards against clicking into region-delete buttons)
+    s = Math.max(0, Math.min(s, sampleText.length));
+    e = Math.max(0, Math.min(e, sampleText.length));
+    if (s === e) { hideMarkToolbar(); return; }
+
+    pendingSel = { start: s, end: e };
+    showMarkToolbar(sel.getRangeAt(0).getBoundingClientRect());
+});
+
+// Hide toolbar when clicking outside
+document.addEventListener('mousedown', e => {
+    if (!markToolbarEl.contains(e.target) && e.target !== sampleInteractiveEl) {
+        hideMarkToolbar();
+    }
+});
+
+function applyMark(type) {
+    if (!pendingSel) { return; }
+    previewType = type; // remember for next selection
+    const { start, end } = pendingSel;
+    regions = regions.filter(r => r.end <= start || r.start >= end);
+    regions.push({ id: nextRid++, start, end, type });
+    regions.sort((a, b) => a.start - b.start);
+    pendingSel = null;
+    hideMarkToolbar(true); // skip render — we render below with the final region
+    renderInteractiveSample();
+    renderRegionsList();
+    rebuildPattern();
+}
+
+// ─── Planner: rendering ───────────────────────────────────────────────────────
+
+function renderInteractiveSample(previewRegion = null) {
+    if (!sampleText) { return; }
+    let displayRegions = regions;
+    if (previewRegion) {
+        // Overlay preview: exclude actual regions that overlap the pending selection
+        displayRegions = [
+            ...regions.filter(r => r.end <= previewRegion.start || r.start >= previewRegion.end),
+            previewRegion,
+        ];
+    }
+    const sorted = [...displayRegions].sort((a, b) => a.start - b.start);
+    const html = [];
+    let pos = 0;
+
+    for (const r of sorted) {
+        if (r.start > pos) { html.push(esc(sampleText.slice(pos, r.start))); }
+        const cls = r.type === 'literal' ? 'seg-lit' : r.type === 'capture' ? 'seg-cap' : r.type === 'captureattr' ? 'seg-attr' : r.type === 'mustcontain' ? 'seg-must' : 'seg-any';
+        const extra = r.id === '__preview__' ? ' seg-preview' : '';
+        html.push(`<span class="${cls}${extra}" data-rid="${r.id}">${esc(sampleText.slice(r.start, r.end))}</span>`);
+        pos = r.end;
+    }
+    if (pos < sampleText.length) { html.push(esc(sampleText.slice(pos))); }
+    sampleInteractiveEl.innerHTML = html.join('');
+}
+
+function renderRegionsList() {
+    if (regions.length === 0) { regionsListEl.innerHTML = ''; return; }
+
+    const sorted = [...regions].sort((a, b) => a.start - b.start);
+    let capN = 0;
+    regionsListEl.innerHTML = sorted.map(r => {
+        const cls   = r.type === 'literal' ? 'rlit' : r.type === 'capture' ? 'rcap' : r.type === 'captureattr' ? 'rattr' : r.type === 'mustcontain' ? 'rmust' : 'rany';
+        const label = r.type === 'literal' ? 'lit' : r.type === 'capture' ? `$${++capN}` : r.type === 'captureattr' ? `"$${++capN}"` : r.type === 'mustcontain' ? 'must' : 'skip';
+        return `<div class="region-item">` +
+            `<span class="region-badge ${cls}">${label}</span>` +
+            `<span class="region-text">${esc(sampleText.slice(r.start, r.end))}</span>` +
+            `<button class="region-del" data-rid="${r.id}" title="Remove">&#215;</button>` +
+            `</div>`;
+    }).join('');
+
+    regionsListEl.querySelectorAll('.region-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+            regions = regions.filter(r => r.id !== Number(btn.dataset.rid));
+            renderInteractiveSample();
+            renderRegionsList();
+            rebuildPattern();
+        });
+    });
+}
+
+function rebuildPattern() {
+    if (regions.length === 0) {
+        customPatternEl.value = '';
+        customReplEl.value    = '';
+        updateCustomPreview();
+        return;
+    }
+
+    // Must-contain regions become lookaheads; all others are positional.
+    const mustContains = regions.filter(r => r.type === 'mustcontain');
+    const positional   = [...regions.filter(r => r.type !== 'mustcontain')].sort((a, b) => a.start - b.start);
+
+    let pattern = '';
+    let pos     = 0;
+    let capN    = 0;
+    const replParts = [];
+
+    for (let i = 0; i < positional.length; i++) {
+        const r = positional[i];
+
+        if (i > 0 && r.start > pos) { pattern += '[\\s\\S]*?'; }  // gap between regions (never before the first)
+
+        if (r.type === 'literal') {
+            pattern += escapeRe(sampleText.slice(r.start, r.end));
+        } else if (r.type === 'capture') {
+            capN++;
+            const next = positional[i + 1];
+            if (next && next.type === 'literal' && next.start === r.end) {
+                const boundary = escapeCharClass(sampleText[next.start]);
+                pattern += `([^${boundary}]*)`;
+            } else {
+                pattern += '([\\s\\S]*?)';
+            }
+            replParts.push('$' + capN);
+        } else if (r.type === 'captureattr') {
+            capN++;
+            const attrText = sampleText.slice(r.start, r.end);
+            const eqIdx = attrText.search(/=["']/);
+            if (eqIdx !== -1) {
+                const quote = attrText[eqIdx + 1];          // " or '
+                const prefix = attrText.slice(0, eqIdx + 2); // e.g. placeholder="
+                const boundary = escapeCharClass(quote);
+                pattern += escapeRe(prefix) + `([^${boundary}]*)` + quote;
+                replParts.push(escapeRe(prefix) + '$' + capN + quote);
+            } else {
+                // Fallback: no attr= structure — capture non-quote content
+                pattern += '([^"]*)';
+                replParts.push('$' + capN);
+            }
+        } else {
+            pattern += '[\\s\\S]*?';
+        }
+
+        pos = r.end;
+    }
+
+    // Prepend a lookahead for each must-contain region.
+    const lookaheads = mustContains
+        .map(r => `(?=[\\s\\S]*${escapeRe(sampleText.slice(r.start, r.end))})`)
+        .join('');
+    pattern = lookaheads + pattern;
+
+    customPatternEl.value = pattern;
+    if (replParts.length && !customReplEl.value) {
+        customReplEl.value = replParts.join('');
+    }
+    updateCustomPreview();
+}
+
+// ─── Planner: controls ────────────────────────────────────────────────────────
+
+btnClearRegions.addEventListener('click', () => {
+    regions = [];
+    renderInteractiveSample();
+    renderRegionsList();
+    customPatternEl.value = '';
+    customReplEl.value    = '';
+    updateCustomPreview();
+});
+
+reanalyzeBtn.addEventListener('click', () => {
+    plannerLoadingEl.classList.remove('hidden');
+    sampleInteractiveEl.classList.add('hidden');
+    plannerHintEl.classList.add('hidden');
+    sampleEmptyEl.classList.add('hidden');
+    vscode.postMessage({ type: 'reanalyze' });
+});
+
+document.querySelectorAll('#custom-flags .flag').forEach(btn => {
+    const f = btn.dataset.flag;
+    btn.addEventListener('click', () => {
+        if (customFlags.has(f)) { customFlags.delete(f); btn.classList.remove('on'); }
+        else                    { customFlags.add(f);    btn.classList.add('on'); }
+        updateCustomPreview();
+    });
+});
+
+customPatternEl.addEventListener('input', () => { regions = []; renderInteractiveSample(); renderRegionsList(); updateCustomPreview(); });
+customReplEl.addEventListener('input', updateCustomPreview);
+
+useCustomBtn.addEventListener('click', () => {
+    const pat = customPatternEl.value.trim();
+    if (!pat) { return; }
+    usePattern(pat, [...customFlags].join(''), customReplEl.value);
+});
+
+function updateCustomPreview() {
+    const pat = customPatternEl.value.trim();
+    if (!pat || !sampleText) {
+        customMatchCountEl.textContent = '';
+        customMatchCountEl.className   = 'match-count';
+        return;
+    }
+    try {
+        const flags  = [...customFlags].join('');
+        const gFlags = flags.includes('g') ? flags : flags + 'g';
+        const count  = (sampleText.match(new RegExp(pat, gFlags)) ?? []).length;
+        customMatchCountEl.textContent = count === 0 ? 'No matches' : `${count} match${count !== 1 ? 'es' : ''} in sample`;
+        customMatchCountEl.className   = 'match-count ' + (count > 0 ? 'has-matches' : 'no-matches');
+    } catch {
+        customMatchCountEl.textContent = 'Invalid pattern';
+        customMatchCountEl.className   = 'match-count no-matches';
+    }
+}
+
+function renderSuggestions(sugs) {
+    if (!sugs.length) {
+        noSuggestEl.classList.remove('hidden');
+        suggestionsEl.innerHTML = '';
+        sugCountBadgeEl.classList.add('hidden');
+        return;
+    }
+    noSuggestEl.classList.add('hidden');
+    sugCountBadgeEl.classList.remove('hidden');
+    sugCountBadgeEl.textContent = sugs.length + ' found';
+
+    suggestionsEl.innerHTML = sugs.map((s, i) => `
+        <div class="suggestion-card">
+            <div class="sug-hdr">
+                <span class="sug-label">${esc(s.label)}</span>
+                <span class="sug-match-count">${s.matchCount} match${s.matchCount !== 1 ? 'es' : ''}</span>
+            </div>
+            <div class="sug-desc">${esc(s.description)}</div>
+            <div class="sug-pattern">/${esc(s.pattern)}/<em>${esc(s.flags)}</em></div>
+            ${s.replacement ? `<div class="sug-repl">&#8594; ${esc(s.replacement)}</div>` : ''}
+            <div class="sug-actions">
+                <button class="sec sug-load-btn" data-idx="${i}">Load pattern</button>
+                <button class="sug-use-btn" data-idx="${i}">Use in Replace</button>
+            </div>
+        </div>`).join('');
+
+    // "Load pattern" populates Pattern Builder so user can inspect/edit
+    suggestionsEl.querySelectorAll('.sug-load-btn').forEach(btn => {
+        const s = sugs[Number(btn.dataset.idx)];
+        btn.addEventListener('click', () => {
+            customPatternEl.value = s.pattern;
+            customReplEl.value    = s.replacement || '';
+            customFlags = new Set(s.flags.split(''));
+            document.querySelectorAll('#custom-flags .flag').forEach(b => {
+                b.classList.toggle('on', customFlags.has(b.dataset.flag));
+            });
+            regions = [];
+            renderInteractiveSample();
+            renderRegionsList();
+            updateCustomPreview();
+        });
+    });
+    suggestionsEl.querySelectorAll('.sug-use-btn').forEach(btn => {
+        const s = sugs[Number(btn.dataset.idx)];
+        btn.addEventListener('click', () => usePattern(s.pattern, s.flags, s.replacement));
+    });
+}
+
+function usePattern(pattern, flags, replacement) {
+    steps = [{ pattern, flags: new Set(flags.split('')), replacement: replacement || '' }];
+    renderSteps();
+    switchTab('replace');
+}
+
 // ─── Messages from extension ──────────────────────────────────────────────────
 
 window.addEventListener('message', ({ data: msg }) => {
@@ -602,6 +990,10 @@ window.addEventListener('message', ({ data: msg }) => {
             break;
         }
 
+        case 'searchCancelled':
+            searchDone();
+            break;
+
         case 'error':
             searchDone();
             showError(msg.message);
@@ -609,6 +1001,31 @@ window.addEventListener('message', ({ data: msg }) => {
 
         case 'history':
             renderHistory(msg.entries);
+            break;
+
+        case 'switchTab':
+            switchTab(msg.tab);
+            break;
+
+        case 'sampleResult':
+            plannerLoadingEl.classList.add('hidden');
+            sampleText = msg.text ?? '';
+            activeSuggestions = msg.suggestions ?? [];
+            // Clear old marks whenever the sample changes
+            regions = [];
+            regionsListEl.innerHTML = '';
+            if (sampleText) {
+                sampleEmptyEl.classList.add('hidden');
+                plannerHintEl.classList.remove('hidden');
+                sampleInteractiveEl.classList.remove('hidden');
+                renderInteractiveSample();
+            } else {
+                sampleInteractiveEl.classList.add('hidden');
+                plannerHintEl.classList.add('hidden');
+                sampleEmptyEl.classList.remove('hidden');
+            }
+            renderSuggestions(activeSuggestions);
+            updateCustomPreview();
             break;
     }
 });

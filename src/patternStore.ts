@@ -43,6 +43,9 @@ const STORAGE_KEY  = 'dpa-rex-refacror.savedPatterns';
 const HISTORY_KEY  = 'dpa-rex-refacror.history';
 const MAX_HISTORY  = 50;
 
+// In-memory only — cleared when the pattern is consumed
+let _pendingPattern: SavedPattern | null = null;
+
 function migratePattern(r: any): SavedPattern {
     if (Array.isArray(r.steps)) { return r as SavedPattern; }
     return {
@@ -92,5 +95,12 @@ export class PatternStore {
 
     clearHistory(): void {
         this.context.globalState.update(HISTORY_KEY, []);
+    }
+
+    setPendingPattern(p: SavedPattern): void { _pendingPattern = p; }
+    consumePendingPattern(): SavedPattern | null {
+        const p = _pendingPattern;
+        _pendingPattern = null;
+        return p;
     }
 }

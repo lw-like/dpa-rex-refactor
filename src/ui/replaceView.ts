@@ -5,6 +5,9 @@ import { buildHtml, MessageHandler, WebviewMessage } from './webviewCore';
 export class ReplaceView implements vscode.WebviewViewProvider {
     static readonly viewId = 'dpa-rex-refacror.sidebar';
 
+    private webviewView: vscode.WebviewView | undefined;
+    private handler: MessageHandler | undefined;
+
     constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly store: PatternStore,
@@ -15,25 +18,33 @@ export class ReplaceView implements vscode.WebviewViewProvider {
         _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
     ): void {
+        this.webviewView = webviewView;
+
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [this.extensionUri],
         };
         webviewView.webview.html = buildHtml(webviewView.webview, this.extensionUri);
 
-        const handler = new MessageHandler(
+        this.handler = new MessageHandler(
             this.store,
             msg => webviewView.webview.postMessage(msg),
         );
 
         webviewView.webview.onDidReceiveMessage(
-            (msg: WebviewMessage) => handler.handle(msg),
+            (msg: WebviewMessage) => this.handler!.handle(msg),
         );
 
         webviewView.onDidChangeVisibility(() => {
-            if (webviewView.visible) { handler.pushHistory(); }
+            if (webviewView.visible) { this.handler!.pushHistory(); this.handler!.pushPendingPattern(); }
         });
 
-        setTimeout(() => handler.pushHistory(), 300);
+        setTimeout(() => { this.handler!.pushHistory(); this.handler!.pushPendingPattern(); }, 300);
+    }
+
+    analyzeSelection(text: string): void {
+        if (!this.webviewView || !this.handler) { return; }
+        this.webviewView.show(true);
+        this.handler.switchToPlanner(text);
     }
 }
