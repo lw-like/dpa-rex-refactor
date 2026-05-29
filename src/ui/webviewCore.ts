@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { PatternStore, HistoryEntry, AppliedChange, PipelineStep } from '../patternStore';
+import { PatternStore, HistoryEntry, AppliedChange, PipelineStep, SavedPattern } from '../patternStore';
 import {
     previewReplace, applyReplace, applySelected, revertChanges,
     previewPipeline, applyPipeline,
@@ -32,11 +32,44 @@ export interface WebviewMessage {
 
 export class MessageHandler {
     private cancelToken: { cancelled: boolean } | null = null;
+    private decorationType: vscode.TextEditorDecorationType | null = null;
 
     constructor(
         private store: PatternStore,
         private readonly post: (msg: object) => void,
     ) {}
+
+    dispose(): void {
+        this.clearDecorations();
+    }
+
+    private clearDecorations(): void {
+        if (this.decorationType) { this.decorationType.dispose(); this.decorationType = null; }
+    }
+
+    private applyDecorations(matches: MatchEntry[]): void {
+        this.clearDecorations();
+        if (!matches.length) { return; }
+        const byUri = new Map<string, vscode.Range[]>();
+        for (const m of matches.slice(0, 1000)) {
+            const lines = m.matchText.split('\n');
+            const endLine = m.line - 1 + lines.length - 1;
+            const endCol  = lines.length === 1 ? m.column - 1 + lines[0].length : lines[lines.length - 1].length;
+            const ranges = byUri.get(m.uri) ?? [];
+            ranges.push(new vscode.Range(new vscode.Position(m.line - 1, m.column - 1), new vscode.Position(endLine, endCol)));
+            byUri.set(m.uri, ranges);
+        }
+        this.decorationType = vscode.window.createTextEditorDecorationType({
+            backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+            border: '1px solid',
+            borderColor: new vscode.ThemeColor('editor.findMatchHighlightBorder'),
+        });
+        const dt = this.decorationType;
+        for (const editor of vscode.window.visibleTextEditors) {
+            const ranges = byUri.get(editor.document.uri.toString());
+            if (ranges) { editor.setDecorations(dt, ranges); }
+        }
+    }
 
     pushHistory(): void {
         this.post({ type: 'history', entries: this.store.getHistory() });
@@ -130,7 +163,16 @@ export class MessageHandler {
                 if (this.cancelToken) { this.cancelToken.cancelled = true; }
                 break;
 
+            case 'clearDecorations':
+                this.clearDecorations();
+                break;
+
+            case 'applyDecorations':
+                if (msg.matches) { this.applyDecorations(msg.matches); }
+                break;
+
             case 'preview': {
+                this.clearDecorations();
                 if (this.cancelToken) { this.cancelToken.cancelled = true; }
                 const token = { cancelled: false };
                 this.cancelToken = token;
@@ -140,6 +182,9 @@ export class MessageHandler {
                     const opts = await this.buildEngineOpts(msg);
                     if (opts === null) { this.cancelToken = null; break; }
                     opts.cancelToken = token;
+                    opts.onProgress = (current, total) => {
+                        this.post({ type: 'searchProgress', current, total });
+                    };
                     if (steps.length > 1) {
                         const result = await previewPipeline(steps, msg.scope as Scope, msg.glob ?? '', msg.contextLines ?? 3, opts);
                         this.post({ type: 'pipelinePreviewResult', ...result });
@@ -147,6 +192,7 @@ export class MessageHandler {
                         const s = steps[0];
                         const result = await previewReplace(s.pattern, s.flags, s.replacement, msg.scope as Scope, msg.glob ?? '', msg.contextLines ?? 2, opts);
                         this.post({ type: 'previewResult', ...result });
+                        this.applyDecorations(result.matches);
                     }
                 } catch (e: unknown) {
                     if (e instanceof Error && e.message === '__SEARCH_CANCELLED__') {
@@ -161,6 +207,7 @@ export class MessageHandler {
             }
 
             case 'applySelected': {
+                this.clearDecorations();
                 try {
                     if (!msg.matches?.length) { this.postError('No matches selected.'); return; }
                     const result = await applySelected(msg.matches);
@@ -176,6 +223,7 @@ export class MessageHandler {
             }
 
             case 'apply': {
+                this.clearDecorations();
                 try {
                     const steps = this.resolveSteps(msg);
                     this.validateSteps(steps, msg);
@@ -245,6 +293,73 @@ export class MessageHandler {
                         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
                     }
                 } catch { /* file may have been deleted */ }
+                break;
+            }
+
+            case 'liveMatchCount': {
+                const editor = vscode.window.activeTextEditor;
+                if (!editor || !msg.pattern) { this.post({ type: 'liveMatchCountResult', count: 0, fileName: '' }); break; }
+                try {
+                    const text = editor.document.getText();
+                    const flags = (msg.flags ?? 'gi').includes('g') ? (msg.flags ?? 'gi') : (msg.flags ?? 'gi') + 'g';
+                    const count = (text.match(new RegExp(msg.pattern, flags)) ?? []).length;
+                    this.post({ type: 'liveMatchCountResult', count, fileName: vscode.workspace.asRelativePath(editor.document.uri) });
+                } catch {
+                    this.post({ type: 'liveMatchCountResult', count: -1, fileName: '' });
+                }
+                break;
+            }
+
+            case 'savePlannerPattern': {
+                if (!msg.pattern?.trim()) { this.postError('Pattern is required.'); break; }
+                const name = await vscode.window.showInputBox({
+                    prompt: 'Save planner pattern as…',
+                    placeHolder: 'Pattern name',
+                    validateInput: v => v.trim() ? undefined : 'Name cannot be empty',
+                });
+                if (!name?.trim()) { break; }
+                this.store.save({
+                    name: name.trim(),
+                    steps: [{ pattern: msg.pattern, flags: msg.flags ?? 'gi', replacement: msg.replacement ?? '' }],
+                    scope: 'workspaceFolder',
+                } as SavedPattern);
+                vscode.window.showInformationMessage(`Pattern "${name.trim()}" saved.`);
+                break;
+            }
+
+            case 'exportPatterns': {
+                const patterns = this.store.getAll();
+                if (!patterns.length) { vscode.window.showInformationMessage('No saved patterns to export.'); break; }
+                const saveUri = await vscode.window.showSaveDialog({
+                    filters: { 'JSON': ['json'] },
+                    defaultUri: vscode.Uri.file('rex-patterns.json'),
+                    saveLabel: 'Export',
+                });
+                if (!saveUri) { break; }
+                await vscode.workspace.fs.writeFile(saveUri, Buffer.from(JSON.stringify(patterns, null, 2), 'utf8'));
+                vscode.window.showInformationMessage(`Exported ${patterns.length} pattern(s).`);
+                break;
+            }
+
+            case 'importPatterns': {
+                const openUris = await vscode.window.showOpenDialog({ filters: { 'JSON': ['json'] }, canSelectMany: false, openLabel: 'Import' });
+                if (!openUris?.length) { break; }
+                try {
+                    const bytes = await vscode.workspace.fs.readFile(openUris[0]);
+                    const data = JSON.parse(Buffer.from(bytes).toString('utf8'));
+                    if (!Array.isArray(data)) { throw new Error('Expected a JSON array'); }
+                    let count = 0;
+                    for (const item of data) {
+                        if (typeof item.name === 'string' && item.name.trim()) {
+                            this.store.save(item as SavedPattern);
+                            count++;
+                        }
+                    }
+                    vscode.window.showInformationMessage(`Imported ${count} pattern(s).`);
+                    this.post({ type: 'importDone' });
+                } catch (e: unknown) {
+                    this.postError(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+                }
                 break;
             }
 

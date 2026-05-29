@@ -670,6 +670,97 @@ tbody tr:hover .open-match-btn { opacity: 1; }
   white-space: nowrap;
 }
 
+/* ── Live match count ────────────────────────────────────────────────────── */
+
+.live-count-bar {
+  font-size: 0.81em;
+  min-height: 1.1em;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  color: var(--vscode-descriptionForeground);
+}
+.live-count-bar.has-matches { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
+.live-count-bar.no-matches  { color: var(--vscode-errorForeground, #f14c4c); }
+
+/* ── File type chips ─────────────────────────────────────────────────────── */
+
+.filetypes-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: -4px;
+  margin-bottom: 9px;
+  padding-left: 84px;
+}
+.chip {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.78em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--vscode-panel-border, #454545);
+  cursor: pointer;
+  user-select: none;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background);
+  transition: background 0.1s, border-color 0.1s;
+}
+.chip:hover { border-color: var(--vscode-focusBorder, #007fd4); color: var(--vscode-foreground); }
+.chip.active {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+  border-color: var(--vscode-button-background, #0e639c);
+}
+
+/* ── Case transform buttons ──────────────────────────────────────────────── */
+
+.case-transforms {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding-left: 84px;
+}
+.ct-lbl {
+  font-size: 0.76em;
+  color: var(--vscode-descriptionForeground);
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+.ct-btn {
+  background: var(--vscode-input-background);
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-panel-border, #454545);
+  padding: 1px 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.78em;
+  border-radius: 2px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+.ct-btn:hover { border-color: var(--vscode-focusBorder, #007fd4); color: var(--vscode-foreground); }
+
+/* ── Analyze button in tab bar ───────────────────────────────────────────── */
+
+.tab-analyze {
+  margin-left: auto;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-bottom: none;
+  border-radius: 2px 2px 0 0;
+  padding: 4px 10px;
+  font-size: 0.80em;
+  cursor: pointer;
+  align-self: flex-end;
+  margin-bottom: 0;
+  line-height: 1.4;
+}
+.tab-analyze:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); border-color: var(--vscode-focusBorder, #007fd4); }
+
+/* ── Compact mode adjustments ────────────────────────────────────────────── */
+body.compact .filetypes-chips { padding-left: 0; }
+body.compact .case-transforms { padding-left: 0; }
+
 /* ── Tab bar ─────────────────────────────────────────────────────────────── */
 
 .tab-bar {

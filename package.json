@@ -57,6 +57,19 @@
         }
       }
     },
+    "keybindings": [
+      {
+        "command": "dpa-rex-refacror.sidebar.focus",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r"
+      },
+      {
+        "command": "dpa-rex-refacror.analyzeSelection",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r",
+        "when": "editorHasSelection"
+      }
+    ],
     "menus": {
       "commandPalette": [
         { "command": "dpa-rex-refacror.openPanel" },

@@ -12,6 +12,7 @@
   <nav class="tab-bar">
     <button class="tab-btn active" data-tab="replace">Replace</button>
     <button class="tab-btn" data-tab="planner">Planner</button>
+    <button id="btn-analyze" class="tab-analyze" title="Analyze active editor selection in Planner (Ctrl+Shift+Alt+R)">Analyze</button>
   </nav>
 
   <!-- ── Replace tab ─────────────────────────────────────────────────────── -->
@@ -25,6 +26,7 @@
       </div>
       <div class="card-body">
         <div id="steps-container"></div>
+        <div id="live-count-bar" class="live-count-bar"></div>
         <div class="btn-row btn-row-addstep">
           <button id="btn-add-step" class="sec">+ Add step</button>
         </div>
@@ -49,6 +51,17 @@
           <label>Extensions</label>
           <input type="text" id="filetypes" placeholder="e.g. ts, js, tsx" spellcheck="false" autocomplete="off"/>
         </div>
+        <div id="filetypes-chips" class="filetypes-chips hidden">
+          <span class="chip" data-ext="ts">.ts</span>
+          <span class="chip" data-ext="js">.js</span>
+          <span class="chip" data-ext="tsx">.tsx</span>
+          <span class="chip" data-ext="jsx">.jsx</span>
+          <span class="chip" data-ext="html">.html</span>
+          <span class="chip" data-ext="css">.css</span>
+          <span class="chip" data-ext="json">.json</span>
+          <span class="chip" data-ext="scss">.scss</span>
+          <span class="chip" data-ext="py">.py</span>
+        </div>
 
         <div class="field hidden" id="exclude-row">
           <label>Exclude</label>
@@ -67,6 +80,8 @@
           <button id="btn-save-pattern" class="sec">Save pattern</button>
           <button id="btn-load-pattern" class="sec">Load pattern</button>
           <button id="btn-delete-pattern" class="danger">Delete pattern</button>
+          <button id="btn-export-patterns" class="sec">Export&#8230;</button>
+          <button id="btn-import-patterns" class="sec">Import&#8230;</button>
         </div>
       </div>
     </div>
@@ -82,7 +97,7 @@
         </div>
       </div>
       <div class="card-body">
-        <div id="loading" class="hidden"><span class="spinner"></span><span>Searching&#8230;</span><button id="btn-cancel-search" class="sec btn-sm">Stop</button></div>
+        <div id="loading" class="hidden"><span class="spinner"></span><span id="search-progress-text">Searching&#8230;</span><button id="btn-cancel-search" class="sec btn-sm">Stop</button></div>
         <div class="summary" id="summary"></div>
         <div id="diff-container" class="hidden"></div>
         <div id="match-table-wrap" class="scroll">
@@ -186,7 +201,9 @@
       </div>
       <div class="btn-row">
         <span id="custom-match-count" class="match-count"></span>
-        <button id="btn-use-custom">Use in Replace</button>
+        <button id="btn-save-planner" class="sec">Save&#8230;</button>
+        <button id="btn-use-preview">Use &amp; Preview</button>
+        <button id="btn-use-custom" class="sec">Use in Replace</button>
       </div>
     </div>
 

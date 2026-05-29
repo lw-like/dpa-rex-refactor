@@ -63,6 +63,14 @@ const groupsLegendEl         = $('groups-legend');
 const ctxLinesEl             = $('ctx-lines');
 const loadingEl              = $('loading');
 const btnCancelSearchEl      = $('btn-cancel-search');
+const searchProgressTextEl   = $('search-progress-text');
+const liveCountBarEl         = $('live-count-bar');
+const filetypesChipsEl       = $('filetypes-chips');
+const btnAnalyzeEl           = $('btn-analyze');
+const btnExportEl            = $('btn-export-patterns');
+const btnImportEl            = $('btn-import-patterns');
+const btnSavePlannerEl       = $('btn-save-planner');
+const btnUsePreviewEl        = $('btn-use-preview');
 const btnPreviewEl           = $('btn-preview');
 const selectAllEl            = $('select-all');
 const btnReplSelEl           = $('btn-replace-sel');
@@ -95,6 +103,7 @@ const useCustomBtn       = $('btn-use-custom');
 
 let sampleText       = '';
 let customFlags      = new Set(['g', 'i']);
+let liveCountTimer   = null;
 let activeSuggestions = [];
 
 // Region marking state
@@ -153,6 +162,14 @@ function renderSteps() {
                 <label>Replacement</label>
                 <input type="text" class="step-replacement" placeholder="e.g. logger.debug($1)" spellcheck="false" autocomplete="off"/>
             </div>
+            <div class="case-transforms">
+              <span class="ct-lbl">Case:</span>
+              <button type="button" class="ct-btn" data-mod="\\u" title="Uppercase next char">\\u</button>
+              <button type="button" class="ct-btn" data-mod="\\l" title="Lowercase next char">\\l</button>
+              <button type="button" class="ct-btn" data-mod="\\U" title="Start ALL UPPER block">\\U</button>
+              <button type="button" class="ct-btn" data-mod="\\L" title="Start all lower block">\\L</button>
+              <button type="button" class="ct-btn" data-mod="\\E" title="End case block">\\E</button>
+            </div>
         </div>
     `).join('');
 
@@ -163,8 +180,21 @@ function renderSteps() {
         patEl.value  = steps[i].pattern;
         replEl.value = steps[i].replacement;
 
-        patEl.addEventListener('input',  e => { steps[i].pattern     = e.target.value; });
+        patEl.addEventListener('input',  e => { steps[i].pattern     = e.target.value; if (i === 0) { scheduleLiveCount(); } });
         replEl.addEventListener('input', e => { steps[i].replacement = e.target.value; });
+
+        el.querySelectorAll('.ct-btn').forEach(btn => {
+            btn.addEventListener('mousedown', e => e.preventDefault());
+            btn.addEventListener('click', () => {
+                const mod = btn.dataset.mod;
+                const s = replEl.selectionStart ?? replEl.value.length;
+                const e2 = replEl.selectionEnd   ?? replEl.value.length;
+                replEl.value = replEl.value.slice(0, s) + mod + replEl.value.slice(e2);
+                steps[i].replacement = replEl.value;
+                replEl.setSelectionRange(s + mod.length, s + mod.length);
+                replEl.focus();
+            });
+        });
 
         el.querySelectorAll('.flag').forEach(f => {
             f.addEventListener('click', () => {
@@ -209,7 +239,9 @@ renderSteps();
 function updateScopeVisibility() {
     const s = scopeEl.value;
     globRowEl.classList.toggle('hidden', s !== 'glob');
-    filetypesRowEl.classList.toggle('hidden', s === 'currentFile' || s === 'selection');
+    const hideFiletypes = s === 'currentFile' || s === 'selection';
+    filetypesRowEl.classList.toggle('hidden', hideFiletypes);
+    filetypesChipsEl.classList.toggle('hidden', hideFiletypes);
     excludeRowEl.classList.toggle('hidden', s !== 'workspaceFolder' && s !== 'glob');
 }
 scopeEl.addEventListener('change', updateScopeVisibility);
@@ -219,6 +251,60 @@ updateScopeVisibility();
 
 $('btn-preview').addEventListener('click', () => dispatch('preview'));
 btnCancelSearchEl.addEventListener('click', () => vscode.postMessage({ type: 'cancelPreview' }));
+btnExportEl.addEventListener('click', () => vscode.postMessage({ type: 'exportPatterns' }));
+btnImportEl.addEventListener('click', () => vscode.postMessage({ type: 'importPatterns' }));
+
+btnAnalyzeEl.addEventListener('click', () => {
+    plannerLoadingEl.classList.remove('hidden');
+    sampleInteractiveEl.classList.add('hidden');
+    plannerHintEl.classList.add('hidden');
+    sampleEmptyEl.classList.add('hidden');
+    vscode.postMessage({ type: 'reanalyze' });
+});
+
+btnSavePlannerEl.addEventListener('click', () => {
+    const pat = customPatternEl.value.trim();
+    if (!pat) { return; }
+    vscode.postMessage({ type: 'savePlannerPattern', pattern: pat, flags: [...customFlags].join(''), replacement: customReplEl.value });
+});
+
+btnUsePreviewEl.addEventListener('click', () => {
+    const pat = customPatternEl.value.trim();
+    if (!pat) { return; }
+    usePattern(pat, [...customFlags].join(''), customReplEl.value);
+    dispatch('preview');
+});
+
+// ─── Live match count ─────────────────────────────────────────────────────────
+
+function scheduleLiveCount() {
+    clearTimeout(liveCountTimer);
+    const pat = steps[0]?.pattern;
+    if (!pat) { liveCountBarEl.textContent = ''; liveCountBarEl.className = 'live-count-bar'; return; }
+    liveCountTimer = setTimeout(() => {
+        vscode.postMessage({ type: 'liveMatchCount', pattern: pat, flags: [...(steps[0]?.flags ?? new Set(['g','i']))].join('') });
+    }, 400);
+}
+
+// ─── File type chips ──────────────────────────────────────────────────────────
+
+document.querySelectorAll('#filetypes-chips .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        const ext = chip.dataset.ext;
+        const current = filetypesEl.value.split(',').map(e => e.trim()).filter(Boolean);
+        const idx = current.indexOf(ext);
+        if (idx >= 0) { current.splice(idx, 1); chip.classList.remove('active'); }
+        else          { current.push(ext);       chip.classList.add('active'); }
+        filetypesEl.value = current.join(', ');
+    });
+});
+
+filetypesEl.addEventListener('input', () => {
+    const active = new Set(filetypesEl.value.split(',').map(e => e.trim()).filter(Boolean));
+    document.querySelectorAll('#filetypes-chips .chip').forEach(chip => {
+        chip.classList.toggle('active', active.has(chip.dataset.ext));
+    });
+});
 $('btn-apply').addEventListener('click',   () => dispatch('apply'));
 $('btn-add-step').addEventListener('click', addStep);
 
@@ -284,6 +370,7 @@ function dispatch(type) {
         btnApplyPipelineEl.classList.add('hidden');
         btnReplSelEl.classList.add('hidden');
 
+        searchProgressTextEl.textContent = 'Searching…';
         loadingEl.classList.remove('hidden');
         btnPreviewEl.disabled = true;
     }
@@ -293,6 +380,7 @@ function dispatch(type) {
 
 function searchDone() {
     loadingEl.classList.add('hidden');
+    searchProgressTextEl.textContent = 'Searching…';
     btnPreviewEl.disabled = false;
 }
 
@@ -692,6 +780,21 @@ function rebuildPattern() {
         .join('');
     pattern = lookaheads + pattern;
 
+    // Collapse adjacent [\s\S]*? wildcards — consecutive lazy wildcards cause
+    // catastrophic backtracking (O(N²) or worse).  Collapsing is always safe
+    // because the quantifiers match the same content; the engine just does it
+    // in linear time with a single wildcard.
+    //   [\s\S]*?[\s\S]*?      → [\s\S]*?
+    //   [\s\S]*?([\s\S]*?)    → ([\s\S]*?)   (outer wildcard is absorbed by capture)
+    //   ([\s\S]*?)[\s\S]*?    → ([\s\S]*?)   (trailing wildcard is absorbed by capture)
+    const W = '[\\s\\S]*?';
+    const CW = '([\\s\\S]*?)';
+    for (let pass = 0; pass < 4; pass++) {
+        pattern = pattern.split(W + W).join(W)
+                         .split(W + CW).join(CW)
+                         .split(CW + W).join(CW);
+    }
+
     customPatternEl.value = pattern;
     if (replParts.length && !customReplEl.value) {
         customReplEl.value = replParts.join('');
@@ -992,6 +1095,29 @@ window.addEventListener('message', ({ data: msg }) => {
 
         case 'searchCancelled':
             searchDone();
+            break;
+
+        case 'searchProgress':
+            searchProgressTextEl.textContent = `${msg.current} / ${msg.total} files`;
+            break;
+
+        case 'liveMatchCountResult': {
+            if (!msg.fileName) { liveCountBarEl.textContent = ''; liveCountBarEl.className = 'live-count-bar'; break; }
+            const fname = msg.fileName.split(/[\\/]/).pop();
+            if (msg.count < 0) {
+                liveCountBarEl.textContent = 'Invalid pattern';
+                liveCountBarEl.className = 'live-count-bar no-matches';
+            } else if (msg.count === 0) {
+                liveCountBarEl.textContent = `No matches in ${fname}`;
+                liveCountBarEl.className = 'live-count-bar no-matches';
+            } else {
+                liveCountBarEl.textContent = `${msg.count} match${msg.count !== 1 ? 'es' : ''} in ${fname}`;
+                liveCountBarEl.className = 'live-count-bar has-matches';
+            }
+            break;
+        }
+
+        case 'importDone':
             break;
 
         case 'error':

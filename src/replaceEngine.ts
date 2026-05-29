@@ -42,6 +42,7 @@ export interface EngineOptions {
     excludePattern?: string;
     selectionRange?: { startOffset: number; endOffset: number };
     cancelToken?: { cancelled: boolean };
+    onProgress?: (current: number, total: number) => void;
 }
 
 // ─── Pipeline result types ────────────────────────────────────────────────────
@@ -305,6 +306,7 @@ export async function previewReplace(
             }
             if (foundInFile) { seenFiles.add(uri.toString()); }
         }
+        opts.onProgress?.(Math.min(b + BATCH_SIZE, files.length), files.length);
     }
     return { matches, totalFiles: seenFiles.size, totalMatches: matches.length };
 }
@@ -609,6 +611,7 @@ export async function previewPipeline(
                 stepCounts,
             });
         }
+        opts.onProgress?.(Math.min(b + BATCH_SIZE, files.length), files.length);
     }
 
     return { totalFiles: fileDiffs.length, fileDiffs };
