@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Content-Security-Policy" content="{{csp}}"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>DPA-REX-Refacror</title>
+  <link rel="stylesheet" href="{{cssUri}}"/>
+</head>
+<body>
+
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="replace">Replace</button>
+    <button class="tab-btn" data-tab="planner">Planner</button>
+    <button id="btn-analyze" class="tab-analyze" title="Analyze active editor selection in Planner (Ctrl+Shift+Alt+R)">Analyze</button>
+  </nav>
+
+  <!-- ── Replace tab ─────────────────────────────────────────────────────── -->
+  <div id="tab-replace" class="tab-pane">
+
+    <!-- Pattern & Replacement -->
+    <div class="card standalone" data-collapse-key="pattern">
+      <div class="card-hdr">
+        <h2>Pattern &amp; Replacement</h2>
+        <span class="card-toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div id="steps-container"></div>
+        <div id="live-count-bar" class="live-count-bar"></div>
+        <div class="btn-row btn-row-addstep">
+          <button id="btn-add-step" class="sec">+ Add step</button>
+        </div>
+
+        <div class="field">
+          <label>Scope</label>
+          <select id="scope">
+            <option value="currentFile">Current file</option>
+            <option value="selection">Current selection</option>
+            <option value="openFiles">Open files</option>
+            <option value="workspaceFolder" selected>Workspace folder</option>
+            <option value="glob">Custom glob</option>
+          </select>
+        </div>
+
+        <div class="field hidden" id="glob-row">
+          <label>Glob</label>
+          <input type="text" id="glob" value="**/*.ts" spellcheck="false" autocomplete="off"/>
+        </div>
+
+        <div class="field hidden" id="filetypes-row">
+          <label>Extensions</label>
+          <input type="text" id="filetypes" placeholder="e.g. ts, js, tsx" spellcheck="false" autocomplete="off"/>
+        </div>
+        <div id="filetypes-chips" class="filetypes-chips hidden">
+          <span class="chip" data-ext="ts">.ts</span>
+          <span class="chip" data-ext="js">.js</span>
+          <span class="chip" data-ext="tsx">.tsx</span>
+          <span class="chip" data-ext="jsx">.jsx</span>
+          <span class="chip" data-ext="html">.html</span>
+          <span class="chip" data-ext="css">.css</span>
+          <span class="chip" data-ext="json">.json</span>
+          <span class="chip" data-ext="scss">.scss</span>
+          <span class="chip" data-ext="py">.py</span>
+        </div>
+
+        <div class="field hidden" id="exclude-row">
+          <label>Exclude</label>
+          <input type="text" id="exclude" placeholder="e.g. **/generated/**" spellcheck="false" autocomplete="off"/>
+        </div>
+
+        <div id="error" class="error"></div>
+        <div id="apply-ok" class="apply-ok"></div>
+
+        <div class="btn-row">
+          <button id="btn-preview">Preview matches</button>
+          <button id="btn-apply" class="sec">Apply replace</button>
+          <label class="ctx-ctrl">Context lines <input type="number" id="ctx-lines" value="2" min="0" max="10"/></label>
+        </div>
+        <div class="btn-row btn-row-patterns">
+          <button id="btn-save-pattern" class="sec">Save pattern</button>
+          <button id="btn-load-pattern" class="sec">Load pattern</button>
+          <button id="btn-delete-pattern" class="danger">Delete pattern</button>
+          <button id="btn-export-patterns" class="sec">Export&#8230;</button>
+          <button id="btn-import-patterns" class="sec">Import&#8230;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview results -->
+    <div class="card standalone" id="results" data-collapse-key="results">
+      <div class="results-hdr card-hdr">
+        <h2>Preview</h2>
+        <div class="results-hdr-right">
+          <button id="btn-apply-pipeline" class="sec hidden">Apply pipeline</button>
+          <button id="btn-replace-sel" class="sec hidden">Replace selected (0)</button>
+          <span class="card-toggle">&#9660;</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="loading" class="hidden"><span class="spinner"></span><span id="search-progress-text">Searching&#8230;</span><button id="btn-cancel-search" class="sec btn-sm">Stop</button></div>
+        <div class="summary" id="summary"></div>
+        <div id="diff-container" class="hidden"></div>
+        <div id="match-table-wrap" class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="cb-th"><input type="checkbox" id="select-all" title="Select / deselect all"/></th>
+                <th style="width:56px">Line</th>
+                <th>Match &#8594; Replacement</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div id="detail">
+          <div class="detail-hdr">
+            <span id="detail-hdr-text"></span>
+            <button id="btn-apply-single" class="sec detail-apply-btn">Apply this</button>
+          </div>
+          <div class="detail-body">
+            <div class="detail-block" id="ctx-block">
+              <div class="detail-lbl">Context</div>
+              <div class="ctx-view" id="ctx-view"></div>
+            </div>
+            <div class="detail-block">
+              <div class="detail-lbl">Match</div>
+              <div class="detail-val old" id="detail-match"></div>
+            </div>
+            <div class="detail-block" id="repl-pattern-block">
+              <div class="detail-lbl">Replacement pattern</div>
+              <div class="detail-val" id="detail-repl-pattern"></div>
+            </div>
+            <div class="detail-block">
+              <div class="detail-lbl">Result</div>
+              <div class="detail-val new" id="detail-repl"></div>
+            </div>
+            <div id="groups-legend" class="groups-legend"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="card standalone" id="history-card" data-collapse-key="history">
+      <div class="card-hdr">
+        <h2>History</h2>
+        <div class="results-hdr-right">
+          <button id="btn-clear-history" class="danger hidden">Clear</button>
+          <span class="card-toggle">&#9660;</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="history-list"></div>
+      </div>
+    </div>
+
+  </div><!-- /tab-replace -->
+
+  <!-- ── Planner tab ─────────────────────────────────────────────────────── -->
+  <div id="tab-planner" class="tab-pane hidden">
+
+    <!-- Sample (interactive) -->
+    <div class="card standalone">
+      <div class="card-hdr">
+        <h2>Sample</h2>
+        <div class="hdr-actions">
+          <button id="btn-clear-regions" class="sec btn-sm" title="Remove all marks">Clear marks</button>
+          <button id="btn-reanalyze" class="sec btn-sm">Re-analyze</button>
+        </div>
+      </div>
+      <div id="planner-loading" class="hidden">
+        <span class="spinner"></span><span>Analyzing&#8230;</span>
+      </div>
+      <div id="sample-empty" class="empty-msg">
+        Select text in the editor, then right-click <strong>Analyze Selection &#8594; Regex Planner</strong>.
+      </div>
+      <p id="planner-hint" class="planner-hint hidden">Select text below, then mark it as <strong>Literal</strong>, <strong>Capture</strong>, or <strong>Skip</strong>.</p>
+      <div id="sample-interactive" class="sample-interactive hidden"></div>
+      <div id="regions-list" class="regions-list"></div>
+    </div>
+
+    <!-- Pattern Builder -->
+    <div class="card standalone">
+      <div class="card-hdr">
+        <h2>Pattern Builder</h2>
+      </div>
+      <div class="field">
+        <label>Pattern</label>
+        <input type="text" id="custom-pattern" spellcheck="false" autocomplete="off" placeholder="Mark text above, or type here&#8230;"/>
+        <div class="flags" id="custom-flags">
+          <div class="flag on" data-flag="g" title="Global">g</div>
+          <div class="flag on" data-flag="i" title="Case insensitive">i</div>
+          <div class="flag" data-flag="m" title="Multiline">m</div>
+          <div class="flag" data-flag="s" title="Dot-all">s</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Replacement</label>
+        <input type="text" id="custom-replacement" spellcheck="false" autocomplete="off" placeholder="$1, \u, \L&#8230;"/>
+      </div>
+      <div class="btn-row">
+        <span id="custom-match-count" class="match-count"></span>
+        <button id="btn-save-planner" class="sec">Save&#8230;</button>
+        <button id="btn-use-preview">Use &amp; Preview</button>
+        <button id="btn-use-custom" class="sec">Use in Replace</button>
+      </div>
+    </div>
+
+    <!-- Auto Suggestions -->
+    <div class="card standalone">
+      <div class="card-hdr">
+        <h2>Suggestions</h2>
+        <span id="sug-count" class="sug-count-badge hidden"></span>
+      </div>
+      <div id="no-suggestions" class="empty-msg hidden">No patterns detected in this sample.</div>
+      <div id="suggestions"></div>
+    </div>
+
+  </div><!-- /tab-planner -->
+
+  <!-- Floating mark toolbar — fixed position, shown on text selection in sample -->
+  <div id="mark-toolbar" class="mark-toolbar hidden">
+    <button id="btn-mark-literal" class="mark-btn mark-lit">Literal</button>
+    <button id="btn-mark-capture" class="mark-btn mark-cap">Capture</button>
+    <button id="btn-mark-attr"    class="mark-btn mark-attr">Attr value</button>
+    <button id="btn-mark-skip"    class="mark-btn mark-any">Skip</button>
+    <button id="btn-mark-must"    class="mark-btn mark-must">Must contain</button>
+  </div>
+
+  <script src="{{jsUri}}"></script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+{
+  "name": "dpa-rex-refacror",
+  "displayName": "DPA-REX-Refacror",
+  "description": "Bulk find-and-replace using regex patterns across files, with saved pattern support.",
+  "version": "0.1.0",
+  "publisher": "dpa-rex-refacror",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:dpa-rex-refacror.openPanel",
+    "onCommand:dpa-rex-refacror.analyzeSelection",
+    "onView:dpa-rex-refacror.sidebar"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dpa-rex-refacror-container",
+          "title": "DPA-REX-Refacror",
+          "icon": "images/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dpa-rex-refacror-container": [
+        {
+          "id": "dpa-rex-refacror.sidebar",
+          "type": "webview",
+          "name": "DPA-REX-Refacror"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dpa-rex-refacror.openPanel",
+        "title": "DPA-REX-Refacror: Open Panel"
+      },
+      {
+        "command": "dpa-rex-refacror.analyzeSelection",
+        "title": "Analyze Selection — Regex Planner"
+      }
+    ],
+    "configuration": {
+      "title": "DPA-REX-Refacror",
+      "properties": {
+        "dpa-rex-refacror.defaultScope": {
+          "type": "string",
+          "enum": ["currentFile", "openFiles", "workspaceFolder", "glob"],
+          "default": "workspaceFolder",
+          "description": "Default scope for bulk replace operations."
+        },
+        "dpa-rex-refacror.excludePattern": {
+          "type": "string",
+          "default": "",
+          "description": "Additional glob pattern to exclude from bulk replace (supports brace syntax, e.g. {**/generated/**,**/*.snap}). Common technical directories (node_modules, .git, dist, out, build, coverage, vendor, __pycache__, etc.) are always excluded."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "dpa-rex-refacror.sidebar.focus",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r"
+      },
+      {
+        "command": "dpa-rex-refacror.analyzeSelection",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r",
+        "when": "editorHasSelection"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "dpa-rex-refacror.openPanel" },
+        { "command": "dpa-rex-refacror.analyzeSelection", "when": "editorHasSelection" }
+      ],
+      "editor/context": [
+        {
+          "command": "dpa-rex-refacror.analyzeSelection",
+          "when": "editorHasSelection",
+          "group": "dpa-rex-refacror@1"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.56.0",
+    "glob": "^10.3.10",
+    "mocha": "^10.3.0",
+    "typescript": "^5.3.3"
+  }
+}

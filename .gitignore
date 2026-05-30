@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+CLAUDE.md
+ROADMAP.md
+TASKS.md
+
+.VSCode
+.claude
