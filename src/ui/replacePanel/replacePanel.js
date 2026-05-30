@@ -93,6 +93,7 @@ const btnMarkCapture     = $('btn-mark-capture');
 const btnMarkAttr        = $('btn-mark-attr');
 const btnMarkSkip        = $('btn-mark-skip');
 const btnMarkMust        = $('btn-mark-must');
+const btnMarkOuter       = $('btn-mark-outer');
 const suggestionsEl      = $('suggestions');
 const noSuggestEl        = $('no-suggestions');
 const sugCountBadgeEl    = $('sug-count');
@@ -557,6 +558,21 @@ function esc(s) {
 
 // ─── Planner: region helpers ─────────────────────────────────────────────────
 
+// Detects the outer delimiter pair of a string, e.g. "{{VALUE}}" → { prefix:'{{', suffix:'}}' }
+function detectWrapper(text) {
+    const pairs = [
+        ['{{', '}}'], ['[[', ']]'],
+        ['{', '}'], ['[', ']'], ['(', ')'], ['<', '>'],
+        ['"', '"'], ["'", "'"], ['`', '`'],
+    ];
+    for (const [open, close] of pairs) {
+        if (text.startsWith(open) && text.endsWith(close) && text.length > open.length + close.length) {
+            return { prefix: open, suffix: close };
+        }
+    }
+    return { prefix: '', suffix: '' };
+}
+
 function escapeRe(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -600,7 +616,7 @@ function hideMarkToolbar(skipRender = false) {
 }
 
 // Prevent button mousedown from stealing the text selection
-[btnMarkLiteral, btnMarkCapture, btnMarkAttr, btnMarkSkip, btnMarkMust].forEach(b =>
+[btnMarkLiteral, btnMarkCapture, btnMarkAttr, btnMarkSkip, btnMarkMust, btnMarkOuter].forEach(b =>
     b.addEventListener('mousedown', e => e.preventDefault())
 );
 
@@ -609,6 +625,7 @@ btnMarkCapture.addEventListener('click', () => applyMark('capture'));
 btnMarkAttr.addEventListener('click',    () => applyMark('captureattr'));
 btnMarkSkip.addEventListener('click',    () => applyMark('skip'));
 btnMarkMust.addEventListener('click',    () => applyMark('mustcontain'));
+btnMarkOuter.addEventListener('click',   () => applyMark('outer'));
 
 // Live-preview the mark color when hovering over toolbar buttons
 const _markTypeOf = {
@@ -617,8 +634,9 @@ const _markTypeOf = {
     'btn-mark-attr':    'captureattr',
     'btn-mark-skip':    'skip',
     'btn-mark-must':    'mustcontain',
+    'btn-mark-outer':   'outer',
 };
-[btnMarkLiteral, btnMarkCapture, btnMarkAttr, btnMarkSkip, btnMarkMust].forEach(btn => {
+[btnMarkLiteral, btnMarkCapture, btnMarkAttr, btnMarkSkip, btnMarkMust, btnMarkOuter].forEach(btn => {
     btn.addEventListener('mouseenter', () => {
         if (!pendingSel) { return; }
         previewType = _markTypeOf[btn.id];
@@ -684,7 +702,7 @@ function renderInteractiveSample(previewRegion = null) {
 
     for (const r of sorted) {
         if (r.start > pos) { html.push(esc(sampleText.slice(pos, r.start))); }
-        const cls = r.type === 'literal' ? 'seg-lit' : r.type === 'capture' ? 'seg-cap' : r.type === 'captureattr' ? 'seg-attr' : r.type === 'mustcontain' ? 'seg-must' : 'seg-any';
+        const cls = r.type === 'literal' ? 'seg-lit' : r.type === 'capture' ? 'seg-cap' : r.type === 'captureattr' ? 'seg-attr' : r.type === 'mustcontain' ? 'seg-must' : r.type === 'outer' ? 'seg-out' : 'seg-any';
         const extra = r.id === '__preview__' ? ' seg-preview' : '';
         html.push(`<span class="${cls}${extra}" data-rid="${r.id}">${esc(sampleText.slice(r.start, r.end))}</span>`);
         pos = r.end;
@@ -699,8 +717,8 @@ function renderRegionsList() {
     const sorted = [...regions].sort((a, b) => a.start - b.start);
     let capN = 0;
     regionsListEl.innerHTML = sorted.map(r => {
-        const cls   = r.type === 'literal' ? 'rlit' : r.type === 'capture' ? 'rcap' : r.type === 'captureattr' ? 'rattr' : r.type === 'mustcontain' ? 'rmust' : 'rany';
-        const label = r.type === 'literal' ? 'lit' : r.type === 'capture' ? `$${++capN}` : r.type === 'captureattr' ? `"$${++capN}"` : r.type === 'mustcontain' ? 'must' : 'skip';
+        const cls   = r.type === 'literal' ? 'rlit' : r.type === 'capture' ? 'rcap' : r.type === 'captureattr' ? 'rattr' : r.type === 'mustcontain' ? 'rmust' : r.type === 'outer' ? 'rout' : 'rany';
+        const label = r.type === 'literal' ? 'lit' : r.type === 'capture' ? `$${++capN}` : r.type === 'captureattr' ? `"$${++capN}"` : r.type === 'mustcontain' ? 'must' : r.type === 'outer' ? `{$${++capN}}` : 'skip';
         return `<div class="region-item">` +
             `<span class="region-badge ${cls}">${label}</span>` +
             `<span class="region-text">${esc(sampleText.slice(r.start, r.end))}</span>` +
@@ -767,6 +785,11 @@ function rebuildPattern() {
                 pattern += '([^"]*)';
                 replParts.push('$' + capN);
             }
+        } else if (r.type === 'outer') {
+            capN++;
+            const { prefix, suffix } = detectWrapper(sampleText.slice(r.start, r.end));
+            pattern += escapeRe(prefix) + '([\\s\\S]*?)' + escapeRe(suffix);
+            replParts.push(escapeRe(prefix) + '$' + capN + escapeRe(suffix));
         } else {
             pattern += '[\\s\\S]*?';
         }

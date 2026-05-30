@@ -855,6 +855,11 @@ body.compact .case-transforms { padding-left: 0; }
   border-bottom: 2px solid rgba(40, 167, 80, 0.6);
   border-radius: 2px 2px 0 0;
 }
+.seg-out {
+  background: rgba(156, 39, 176, 0.18);
+  border-bottom: 2px solid rgba(156, 39, 176, 0.6);
+  border-radius: 2px 2px 0 0;
+}
 /* Pending selection preview — same color as the target mark type, but dashed */
 .seg-preview {
   opacity: 0.7;
@@ -885,6 +890,7 @@ body.compact .case-transforms { padding-left: 0; }
 .region-badge.rattr { background: rgba(0, 183, 195, 0.22);  border: 1px solid rgba(0, 183, 195, 0.5);   color: var(--vscode-foreground); }
 .region-badge.rany  { background: rgba(150, 150, 150, 0.18); border: 1px solid rgba(150, 150, 150, 0.4); color: var(--vscode-foreground); }
 .region-badge.rmust { background: rgba(40, 167, 80, 0.22);  border: 1px solid rgba(40, 167, 80, 0.5);   color: var(--vscode-foreground); }
+.region-badge.rout  { background: rgba(156, 39, 176, 0.18); border: 1px solid rgba(156, 39, 176, 0.55); color: var(--vscode-foreground); }
 
 .region-text {
   flex: 1;
@@ -950,6 +956,12 @@ body.compact .case-transforms { padding-left: 0; }
   border: 1px solid rgba(0, 183, 195, 0.55);
 }
 .mark-attr:hover { background: rgba(0, 183, 195, 0.42); }
+.mark-out {
+  background: rgba(156, 39, 176, 0.18);
+  border-color: rgba(156, 39, 176, 0.55);
+  color: var(--vscode-foreground);
+}
+.mark-out:hover { background: rgba(156, 39, 176, 0.38); }
 .mark-must {
   background: rgba(40, 167, 80, 0.25);
   color: var(--vscode-foreground);
