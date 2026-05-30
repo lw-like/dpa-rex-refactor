@@ -1,11 +1,14 @@
 {
   "name": "dpa-rex-refacror",
   "displayName": "DPA-REX-Refacror",
+  "author": "lw-like",
   "description": "Bulk find-and-replace using regex patterns across files, with saved pattern support.",
   "version": "0.1.0",
   "publisher": "dpa-rex-refacror",
+  "license": "AGPL-3.0-only",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
+  "repository": "https://github.com/lw-like/dpa-rex-refactor",
   "activationEvents": [
     "onCommand:dpa-rex-refacror.openPanel",
     "onCommand:dpa-rex-refacror.analyzeSelection",
