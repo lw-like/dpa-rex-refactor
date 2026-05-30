@@ -1120,6 +1120,27 @@ window.addEventListener('message', ({ data: msg }) => {
         case 'importDone':
             break;
 
+        case 'angularTodosResult': {
+            const items = msg.items ?? [];
+            if (!items.length) {
+                angularListEl.innerHTML = '<p class="angular-empty">No extracted components found. Use "Extract to Angular Component" to create one.</p>';
+                break;
+            }
+            angularListEl.innerHTML = items.map(item => {
+                const pct = item.total ? Math.round(item.done / item.total * 100) : 0;
+                const allDone = item.done === item.total && item.total > 0;
+                return '<div class="comp-item" data-path="' + esc(item.fsPath) + '">' +
+                    '<div class="comp-item-hdr">' +
+                    '<span class="comp-name">' + esc(item.component) + '</span>' +
+                    '<span class="comp-progress' + (allDone ? ' done' : '') + '">' + item.done + '/' + item.total + '</span>' +
+                    '</div>' +
+                    '<div class="comp-origins">' + esc(item.originFiles.join(', ')) + '</div>' +
+                    '<div class="comp-bar"><div class="comp-bar-fill" style="width:' + pct + '%"></div></div>' +
+                    '</div>';
+            }).join('');
+            break;
+        }
+
         case 'error':
             searchDone();
             showError(msg.message);
@@ -1239,3 +1260,20 @@ btnClearHistoryEl.addEventListener('click', () => {
 });
 
 vscode.postMessage({ type: 'loadPatterns' });
+
+// ─── Angular tab ──────────────────────────────────────────────────────────────
+
+const angularListEl = $('angular-list');
+
+function loadAngularTodos() {
+    angularListEl.innerHTML = '<p class="angular-empty">Scanning workspace…</p>';
+    vscode.postMessage({ type: 'loadAngularTodos' });
+}
+
+document.querySelector('[data-tab="angular"]').addEventListener('click', loadAngularTodos);
+$('btn-refresh-angular').addEventListener('click', loadAngularTodos);
+
+angularListEl.addEventListener('click', e => {
+    const item = e.target.closest('.comp-item');
+    if (item) { vscode.postMessage({ type: 'openTodoReview', fsPath: item.dataset.path }); }
+});

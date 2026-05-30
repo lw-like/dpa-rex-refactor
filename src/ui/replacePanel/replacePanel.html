@@ -12,6 +12,7 @@
   <nav class="tab-bar">
     <button class="tab-btn active" data-tab="replace">Replace</button>
     <button class="tab-btn" data-tab="planner">Planner</button>
+    <button class="tab-btn" data-tab="angular">Angular</button>
     <button id="btn-analyze" class="tab-analyze" title="Analyze active editor selection in Planner (Ctrl+Shift+Alt+R)">Analyze</button>
   </nav>
 
@@ -218,6 +219,17 @@
     </div>
 
   </div><!-- /tab-planner -->
+
+  <!-- ── Angular tab ────────────────────────────────────────────────────── -->
+  <div id="tab-angular" class="tab-pane hidden">
+    <div class="angular-hdr">
+      <h2>Extracted Components</h2>
+      <button id="btn-refresh-angular" class="sec btn-sm">Refresh</button>
+    </div>
+    <div id="angular-list" class="angular-list">
+      <p class="angular-empty">Click Refresh to scan for extracted components.</p>
+    </div>
+  </div><!-- /tab-angular -->
 
   <!-- Floating mark toolbar — fixed position, shown on text selection in sample -->
   <div id="mark-toolbar" class="mark-toolbar hidden">
