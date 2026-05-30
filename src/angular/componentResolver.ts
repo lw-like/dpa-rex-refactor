@@ -11,7 +11,7 @@ export interface ComponentResolution {
     unresolved: string[];   // selectors present in HTML but not found in workspace
 }
 
-const EXCLUDE_PATTERN = '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/build/**,**/coverage/**}';
+const EXCLUDE_PATTERN = '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/build/**,**/coverage/**,**/.angular/**}';
 
 /**
  * Builds a workspace-wide index of selector → component class, then returns

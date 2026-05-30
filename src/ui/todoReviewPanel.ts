@@ -94,38 +94,45 @@ export class TodoReviewPanel {
 }
 
 /**
- * Finds the 0-based line number where the item's selector is defined.
+ * Finds the 0-based line where the item's selector is defined.
  *
- * Strategy:
- * - Root class (.cl-header): search for the root selector followed by whitespace or {
- * - BEM child (&--right):    first find the parent block (.cl-header), then find the
- *                            leaf selector (&--right / &__element) after that point
+ * For media variants: first locates the @media block, then the parent selector
+ * inside it, then the leaf selector — so it jumps to the right occurrence
+ * rather than always the first one in the file.
  */
 function findSelectorLine(doc: vscode.TextDocument, item: TodoItem): number {
     const text = doc.getText();
     const lines = text.split('\n');
 
-    if (item.isRoot) {
-        const rootSel = item.selectorChain[0]; // e.g. ".cl-header"
-        return lines.findIndex(l => {
-            const t = l.trim();
-            return t.startsWith(rootSel) && /[\s{,]/.test(t.slice(rootSel.length) || ' ');
-        });
+    const matchesSel = (line: string, sel: string) => {
+        const t = line.trim();
+        return t.startsWith(sel) && /[\s{,]/.test(t.slice(sel.length) || ' ');
+    };
+
+    // When there's a media context, find its line first and search only after it.
+    let searchFrom = 0;
+    if (item.mediaContext) {
+        // Match the @media query text (ignore surrounding whitespace differences)
+        const mediaQuery = item.mediaContext.replace(/\s+/g, '\\s+');
+        const mediaRe = new RegExp(mediaQuery.replace(/[()]/g, '\\$&'));
+        const mediaLine = lines.findIndex(l => mediaRe.test(l.trim()));
+        if (mediaLine >= 0) { searchFrom = mediaLine + 1; }
     }
 
-    // BEM child: locate parent block first, then find leaf selector after it
-    const parentSel = item.selectorChain[0];      // e.g. ".cl-header"
-    const leafSel   = item.selectorChain[item.selectorChain.length - 1]; // e.g. "&--right"
+    if (item.isRoot) {
+        const rootSel = item.selectorChain[0];
+        return lines.findIndex((l, i) => i >= searchFrom && matchesSel(l, rootSel));
+    }
 
-    const parentLine = lines.findIndex(l => {
-        const t = l.trim();
-        return t.startsWith(parentSel) && /[\s{,]/.test(t.slice(parentSel.length) || ' ');
-    });
+    // BEM child: find parent block first, then leaf within it
+    const parentSel = item.selectorChain[0];
+    const leafSel   = item.selectorChain[item.selectorChain.length - 1];
 
-    const searchFrom = parentLine >= 0 ? parentLine + 1 : 0;
+    const parentLine = lines.findIndex((l, i) => i >= searchFrom && matchesSel(l, parentSel));
+    const leafFrom   = parentLine >= 0 ? parentLine + 1 : searchFrom;
 
     const leafLine = lines.findIndex((l, i) => {
-        if (i < searchFrom) { return false; }
+        if (i < leafFrom) { return false; }
         const t = l.trim();
         return t.startsWith(leafSel) && /[\s{,]/.test(t.slice(leafSel.length) || ' ');
     });
@@ -166,6 +173,13 @@ h1 { font-size: 1.1em; font-weight: 600; padding-bottom: 8px; border-bottom: 1px
 .item-row input[type=checkbox] { cursor: pointer; flex-shrink: 0; margin-top: 2px; }
 .cls { font-family: var(--vscode-editor-font-family); font-weight: bold; font-size: 0.9em; }
 .bem { font-family: var(--vscode-editor-font-family); font-size: 0.78em; color: var(--vscode-descriptionForeground); flex: 1; }
+.media-badge {
+    font-family: var(--vscode-editor-font-family); font-size: 0.75em; flex: 1;
+    color: var(--vscode-foreground);
+    background: rgba(156, 39, 176, 0.15);
+    border: 1px solid rgba(156, 39, 176, 0.4);
+    border-radius: 3px; padding: 0 5px;
+}
 .goto-btn {
     flex-shrink: 0;
     background: none;
@@ -219,9 +233,9 @@ function render() {
                 '<div class="item-row">' +
                 '<input type="checkbox" data-action="toggle" data-gi="' + gi + '" data-ii="' + ii + '"' + (item.checked ? ' checked' : '') + '>' +
                 '<span class="cls">.' + esc(item.className) + '</span>' +
-                (item.isRoot
-                    ? '<span class="bem">(direct properties)</span>'
-                    : '<span class="bem">&#8594; ' + esc(item.selectorChain.join(' > ')) + '</span>') +
+                (item.mediaContext
+                    ? '<span class="media-badge">' + esc(item.mediaContext) + '</span>'
+                    : (item.isRoot ? '<span class="bem">(direct properties)</span>' : '<span class="bem">&#8594; ' + esc(item.selectorChain.join(' > ')) + '</span>')) +
                 '<button class="goto-btn" data-action="goto" data-gi="' + gi + '" data-ii="' + ii + '" title="Go to selector in origin file">&#8599;</button>' +
                 '</div>' +
                 '<pre>' + esc(item.content) + '</pre>' +

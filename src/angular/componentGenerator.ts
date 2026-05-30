@@ -1,4 +1,5 @@
 import { ClassUsage, relativePath } from './cssScanner';
+import { MixinMap, resolveMixin } from './mixinsScanner';
 
 export interface ComponentImport {
     className: string;
@@ -14,6 +15,8 @@ export interface ComponentSpec {
     classUsages: ClassUsage[];
     moveClasses: string[];  // class names the user confirmed to move into component SCSS
     componentImports: ComponentImport[];
+    mixinMap?: MixinMap;    // when set, @media blocks are replaced with @include calls
+    mixinsImport?: string;  // import statement prepended to the generated SCSS
 }
 
 export interface GeneratedFiles {
@@ -84,13 +87,20 @@ function buildScss(spec: ComponentSpec): string {
     const moveSet = new Set(spec.moveClasses);
     const lines: string[] = [];
 
+    // Prepend import statement if a mixins file is configured
+    if (spec.mixinsImport?.trim()) {
+        const imp = spec.mixinsImport.trim().replace(/;+$/, '');
+        lines.push(`${imp};`);
+        lines.push('');
+    }
+
     const movedUsages = spec.classUsages.filter(u => moveSet.has(u.className));
     const keptUsages = spec.classUsages.filter(u => !moveSet.has(u.className) && u.definedIn.length > 0);
 
     if (movedUsages.length) {
         lines.push('// Component styles — moved from global (single-use classes)');
         lines.push('');
-        lines.push(...renderMovedClasses(movedUsages));
+        lines.push(...renderMovedClasses(movedUsages, spec.mixinMap));
     }
 
     if (keptUsages.length) {
@@ -127,7 +137,16 @@ function buildScss(spec: ComponentSpec): string {
  *       }
  *   }
  */
-function renderMovedClasses(usages: ClassUsage[]): string[] {
+/** Renders `@media` or `@include mixin` depending on whether a matching mixin is found. */
+function mediaOrMixin(mediaContext: string, mixinMap?: MixinMap): string {
+    if (mixinMap) {
+        const name = resolveMixin(mediaContext, mixinMap);
+        if (name) { return `@include ${name}`; }
+    }
+    return mediaContext;
+}
+
+function renderMovedClasses(usages: ClassUsage[], mixinMap?: MixinMap): string[] {
     const lines: string[] = [];
 
     // Separate classes we have source info for from those we don't
@@ -150,29 +169,74 @@ function renderMovedClasses(usages: ClassUsage[]): string[] {
         const allTopLevel = group.every(u => u.nodeInfo!.selectorChain.length === 1);
 
         if (allTopLevel) {
-            // Not BEM — each class is its own top-level block
+            // Not BEM — emit base block then each @media variant as a separate block
             for (const u of group) {
-                lines.push(`${rootSel} {`);
-                lines.push(...dedentContent(u.nodeInfo!.rawContent, '    '));
-                lines.push('}');
-                lines.push('');
+                const defs     = u.nodeInfo!.allDefinitions;
+                const baseDef  = defs.find(d => !d.mediaContext);
+                const mediaDefs = defs.filter(d => d.mediaContext);
+
+                if (baseDef) {
+                    lines.push(originComment(u.nodeInfo!.selectorChain));
+                    lines.push(`${rootSel} {`);
+                    lines.push(...dedentContent(baseDef.rawContent, '    '));
+                    lines.push('}');
+                    lines.push('');
+                }
+
+                for (const mDef of mediaDefs) {
+                    lines.push(originComment(u.nodeInfo!.selectorChain, mDef.mediaContext));
+                    lines.push(`${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
+                    lines.push(`    ${rootSel} {`);
+                    lines.push(...dedentContent(mDef.rawContent, '        '));
+                    lines.push('    }');
+                    lines.push('}');
+                    lines.push('');
+                }
             }
         } else {
             // BEM — wrap all children under the root selector block
             lines.push(`${rootSel} {`);
             for (const u of group) {
                 const chain = u.nodeInfo!.selectorChain;
+                const defs  = u.nodeInfo!.allDefinitions;
+                const baseDef   = defs.find(d => !d.mediaContext);
+                const mediaDefs = defs.filter(d =>  d.mediaContext);
+
                 if (chain.length === 1) {
-                    // Root class is in the same group as BEM children.
-                    // Its rawContent contains ALL nested blocks — outputting it in full
-                    // would duplicate every child that is also rendered individually below.
-                    // Strip nested blocks and emit only direct properties (e.g. "display: flex").
-                    lines.push(...dedentContent(extractDirectProperties(u.nodeInfo!.rawContent), '    '));
+                    // Root class: emit only its direct properties (strip nested blocks to
+                    // avoid duplicating BEM children rendered individually below).
+                    if (baseDef) {
+                        const props = extractDirectProperties(baseDef.rawContent);
+                        if (props.trim()) {
+                            lines.push(`    ${originComment(chain)}`);
+                            lines.push(...dedentContent(props, '    '));
+                        }
+                    }
+                    for (const mDef of mediaDefs) {
+                        const props = extractDirectProperties(mDef.rawContent);
+                        if (props.trim()) {
+                            lines.push('');
+                            lines.push(`    ${originComment(chain, mDef.mediaContext)}`);
+                            lines.push(`    ${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
+                            lines.push(...dedentContent(props, '        '));
+                            lines.push('    }');
+                        }
+                    }
                 } else {
-                    // Nested child — use the raw selector (e.g. "&--right") to preserve & notation
+                    // BEM child — base style + nested @media variants inside the selector
                     const leafSel = chain[chain.length - 1];
+                    lines.push(`    ${originComment(chain)}`);
                     lines.push(`    ${leafSel} {`);
-                    lines.push(...dedentContent(u.nodeInfo!.rawContent, '        '));
+                    if (baseDef) {
+                        lines.push(...dedentContent(baseDef.rawContent, '        '));
+                    }
+                    for (const mDef of mediaDefs) {
+                        lines.push('');
+                        lines.push(`        ${originComment(chain, mDef.mediaContext)}`);
+                        lines.push(`        ${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
+                        lines.push(...dedentContent(mDef.rawContent, '            '));
+                        lines.push('        }');
+                    }
                     lines.push('    }');
                     lines.push('');
                 }
@@ -201,7 +265,8 @@ export interface TodoItem {
     className: string;
     selectorChain: string[];
     isRoot: boolean;
-    content: string;        // formatted SCSS snippet to locate and delete in the origin
+    mediaContext?: string;   // undefined = base definition; "@media ..." = media variant
+    content: string;         // SCSS snippet with origin comment at top — one definition only
     checked: boolean;
 }
 
@@ -236,21 +301,49 @@ function buildTodo(spec: ComponentSpec, scssFileName: string): string {
         const items: TodoItem[] = [];
 
         for (const u of usages) {
-            const chain = u.nodeInfo!.selectorChain;
+            const chain  = u.nodeInfo!.selectorChain;
             const isRoot = chain.length === 1;
 
-            let content: string;
-            if (isRoot) {
-                const directProps = extractDirectProperties(u.nodeInfo!.rawContent);
-                if (!directProps.trim()) { continue; }
-                content = dedentContent(directProps, '').join('\n');
-            } else {
-                const leafSel = chain[chain.length - 1];
-                const inner = dedentContent(u.nodeInfo!.rawContent, '    ');
-                content = [`${leafSel} {`, ...inner, '}'].join('\n');
-            }
+            // One TodoItem per definition (base + each @media variant separately)
+            for (const def of u.nodeInfo!.allDefinitions) {
+                const comment = originComment(chain, def.mediaContext);
+                let content: string;
 
-            items.push({ className: u.className, selectorChain: chain, isRoot, content, checked: false });
+                if (isRoot) {
+                    const props = extractDirectProperties(def.rawContent);
+                    if (!props.trim()) { continue; }
+                    if (def.mediaContext) {
+                        content = [comment, `${def.mediaContext} {`, ...dedentContent(props, '    '), '}'].join('\n');
+                    } else {
+                        content = [comment, ...dedentContent(props, '')].join('\n');
+                    }
+                } else {
+                    const leafSel = chain[chain.length - 1];
+                    if (def.mediaContext) {
+                        content = [
+                            comment,
+                            `${def.mediaContext} {`,
+                            `    ${chain[0]} {`,
+                            `        ${leafSel} {`,
+                            ...dedentContent(def.rawContent, '            '),
+                            '        }',
+                            '    }',
+                            '}',
+                        ].join('\n');
+                    } else {
+                        content = [comment, `${leafSel} {`, ...dedentContent(def.rawContent, '    '), '}'].join('\n');
+                    }
+                }
+
+                items.push({
+                    className: u.className,
+                    selectorChain: chain,
+                    isRoot,
+                    mediaContext: def.mediaContext,
+                    content,
+                    checked: false,
+                });
+            }
         }
 
         if (items.length) {
@@ -335,6 +428,12 @@ function dedentContent(raw: string, indent: string): string[] {
     while (result.length && !result[result.length - 1].trim()) { result.pop(); }
 
     return result;
+}
+
+/** Builds a one-line origin comment, e.g. "// .cl-header > &--right" or "// @media (...) > .cl-header > &--right" */
+function originComment(chain: string[], mediaContext?: string): string {
+    const selPart = chain.join(' > ');
+    return mediaContext ? `// ${mediaContext} > ${selPart}` : `// ${selPart}`;
 }
 
 function toFileName(pascalName: string): string {

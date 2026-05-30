@@ -4,6 +4,7 @@ import { analyzeHtml } from './htmlAnalyzer';
 import { scanClassUsage, ClassUsage, relativePath } from './cssScanner';
 import { resolveCustomComponents, ResolvedComponent } from './componentResolver';
 import { generateComponent, toPascalCase, toSelector, ComponentSpec, ComponentImport, TodoData } from './componentGenerator';
+import { parseMixinsFile, MixinMap } from './mixinsScanner';
 import { TodoReviewPanel } from '../ui/todoReviewPanel';
 
 export async function extractAngularComponent(): Promise<void> {
@@ -57,6 +58,9 @@ export async function extractAngularComponent(): Promise<void> {
     const componentImports = await pickComponentImports(resolution, componentDir);
     if (componentImports === undefined) { return; } // cancelled
 
+    // 5b — Load mixin map from settings (optional)
+    const { mixinMap, mixinsImport } = await loadMixinSettings();
+
     const spec: ComponentSpec = {
         name: componentName,
         selector: toSelector(componentName),
@@ -66,6 +70,8 @@ export async function extractAngularComponent(): Promise<void> {
         classUsages,
         moveClasses,
         componentImports,
+        mixinMap,
+        mixinsImport,
     };
 
     const files = generateComponent(spec);
@@ -226,6 +232,32 @@ async function pickComponentImports(
             if (!importPath.startsWith('.')) { importPath = './' + importPath; }
             return { className: p.component!.className, importPath };
         });
+}
+
+async function loadMixinSettings(): Promise<{ mixinMap?: MixinMap; mixinsImport?: string }> {
+    const config = vscode.workspace.getConfiguration('dpa-rex-refacror.angular');
+    const mixinsFileSetting = config.get<string>('mixinsFile', '').trim();
+    const mixinsImport = config.get<string>('mixinsImport', '').trim() || undefined;
+
+    if (!mixinsFileSetting) { return { mixinsImport }; }
+
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders?.length) { return { mixinsImport }; }
+
+    const absPath = path.isAbsolute(mixinsFileSetting)
+        ? mixinsFileSetting
+        : path.join(folders[0].uri.fsPath, mixinsFileSetting);
+
+    try {
+        const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(absPath));
+        const mixinMap = parseMixinsFile(Buffer.from(bytes).toString('utf8'));
+        return { mixinMap, mixinsImport };
+    } catch {
+        vscode.window.showWarningMessage(
+            `Angular: could not read mixins file "${mixinsFileSetting}" — @media queries will not be replaced with mixins.`,
+        );
+        return { mixinsImport };
+    }
 }
 
 function toKebabCase(pascal: string): string {
