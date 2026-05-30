@@ -9,6 +9,7 @@
   "activationEvents": [
     "onCommand:dpa-rex-refacror.openPanel",
     "onCommand:dpa-rex-refacror.analyzeSelection",
+    "onCommand:dpa-rex-refacror.extractAngularComponent",
     "onView:dpa-rex-refacror.sidebar"
   ],
   "main": "./out/extension.js",
@@ -39,6 +40,10 @@
       {
         "command": "dpa-rex-refacror.analyzeSelection",
         "title": "Analyze Selection — Regex Planner"
+      },
+      {
+        "command": "dpa-rex-refacror.extractAngularComponent",
+        "title": "Extract to Angular Component"
       }
     ],
     "configuration": {
@@ -68,18 +73,30 @@
         "key": "ctrl+shift+alt+r",
         "mac": "cmd+shift+alt+r",
         "when": "editorHasSelection"
+      },
+      {
+        "command": "dpa-rex-refacror.extractAngularComponent",
+        "key": "ctrl+shift+alt+a",
+        "mac": "cmd+shift+alt+a",
+        "when": "editorHasSelection"
       }
     ],
     "menus": {
       "commandPalette": [
         { "command": "dpa-rex-refacror.openPanel" },
-        { "command": "dpa-rex-refacror.analyzeSelection", "when": "editorHasSelection" }
+        { "command": "dpa-rex-refacror.analyzeSelection", "when": "editorHasSelection" },
+        { "command": "dpa-rex-refacror.extractAngularComponent", "when": "editorHasSelection" }
       ],
       "editor/context": [
         {
           "command": "dpa-rex-refacror.analyzeSelection",
           "when": "editorHasSelection",
           "group": "dpa-rex-refacror@1"
+        },
+        {
+          "command": "dpa-rex-refacror.extractAngularComponent",
+          "when": "editorHasSelection",
+          "group": "dpa-rex-refacror@2"
         }
       ]
     }

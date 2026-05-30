@@ -1037,6 +1037,70 @@ mark {
 }
 #planner-loading.hidden { display: none; }
 
+/* ── Angular tab ─────────────────────────────────────────────────────────── */
+.angular-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.angular-list { display: flex; flex-direction: column; gap: 8px; }
+.angular-empty { color: var(--vscode-descriptionForeground); font-style: italic; font-size: 0.88em; }
+
+.comp-item {
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 3px;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: var(--vscode-sideBar-background, transparent);
+  transition: background 0.1s;
+}
+.comp-item:hover { background: var(--vscode-list-hoverBackground); }
+
+.comp-item-hdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.comp-name {
+  font-weight: 600;
+  font-size: 0.92em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.comp-progress {
+  flex-shrink: 0;
+  font-size: 0.78em;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+}
+.comp-progress.done { color: var(--vscode-testing-iconPassed, #4caf50); }
+
+.comp-origins {
+  font-size: 0.78em;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 6px;
+}
+.comp-bar {
+  height: 3px;
+  background: var(--vscode-panel-border, #454545);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.comp-bar-fill {
+  height: 100%;
+  background: var(--vscode-progressBar-background, #0e70c0);
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
 /* ── Compact mode — narrow sidebar ───────────────────────────────────────── */
 body.compact { padding: 8px; }
 body.compact .tab-bar { margin: -8px -8px 12px -8px; }

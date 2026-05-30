@@ -8,9 +8,12 @@ import {
     Scope, MatchEntry, EngineOptions,
 } from '../replaceEngine';
 import { extractPatterns } from '../patternExtractor';
+import { TodoData } from '../angular/componentGenerator';
+import { TodoReviewPanel } from './todoReviewPanel';
 
 export interface WebviewMessage {
     type: string;
+    fsPath?: string;
     name?: string;
     steps?: PipelineStep[];
     // Single-step compat (step 0 values, sent alongside steps[]):
@@ -359,6 +362,45 @@ export class MessageHandler {
                     this.post({ type: 'importDone' });
                 } catch (e: unknown) {
                     this.postError(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+                }
+                break;
+            }
+
+            case 'loadAngularTodos': {
+                const EXCLUDE = '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/build/**}';
+                const todoFiles = await vscode.workspace.findFiles('**/*.todo.json', EXCLUDE);
+                const items: {
+                    component: string; scssFile: string; fsPath: string;
+                    done: number; total: number; originFiles: string[];
+                }[] = [];
+                for (const uri of todoFiles) {
+                    try {
+                        const bytes = await vscode.workspace.fs.readFile(uri);
+                        const data = JSON.parse(Buffer.from(bytes).toString('utf8')) as TodoData;
+                        const allItems = data.groups.flatMap(g => g.items);
+                        items.push({
+                            component: data.component,
+                            scssFile: data.scssFile,
+                            fsPath: uri.fsPath,
+                            done: allItems.filter(i => i.checked).length,
+                            total: allItems.length,
+                            originFiles: data.groups.map(g => g.originFile),
+                        });
+                    } catch { /* skip malformed files */ }
+                }
+                this.post({ type: 'angularTodosResult', items });
+                break;
+            }
+
+            case 'openTodoReview': {
+                if (!msg.fsPath) { break; }
+                try {
+                    const uri = vscode.Uri.file(msg.fsPath);
+                    const bytes = await vscode.workspace.fs.readFile(uri);
+                    const data = JSON.parse(Buffer.from(bytes).toString('utf8')) as TodoData;
+                    TodoReviewPanel.show(uri, data);
+                } catch (e: unknown) {
+                    this.postError(`Could not open todo: ${e instanceof Error ? e.message : String(e)}`);
                 }
                 break;
             }

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ReplacePanel } from './ui/replacePanel';
 import { ReplaceView } from './ui/replaceView';
 import { PatternStore } from './patternStore';
+import { extractAngularComponent } from './angular/extractCommand';
 
 let store: PatternStore;
 let replaceView: ReplaceView;
@@ -25,6 +26,7 @@ export function activate(context: vscode.ExtensionContext): void {
             replaceView,
             { webviewOptions: { retainContextWhenHidden: true } },
         ),
+        vscode.commands.registerCommand('dpa-rex-refacror.extractAngularComponent', extractAngularComponent),
     );
 }
 
