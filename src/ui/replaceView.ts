@@ -11,6 +11,7 @@ export class ReplaceView implements vscode.WebviewViewProvider {
     constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly store: PatternStore,
+        private readonly extContext: vscode.ExtensionContext,
     ) {}
 
     resolveWebviewView(
@@ -29,6 +30,7 @@ export class ReplaceView implements vscode.WebviewViewProvider {
         this.handler = new MessageHandler(
             this.store,
             msg => webviewView.webview.postMessage(msg),
+            this.extContext,
         );
 
         webviewView.webview.onDidReceiveMessage(

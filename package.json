@@ -62,6 +62,26 @@
           "type": "string",
           "default": "",
           "description": "Additional glob pattern to exclude from bulk replace (supports brace syntax, e.g. {**/generated/**,**/*.snap}). Common technical directories (node_modules, .git, dist, out, build, coverage, vendor, __pycache__, etc.) are always excluded."
+        },
+        "dpa-rex-refacror.angular.autoImport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically add the extracted component to the parent component's imports array and TypeScript import statement."
+        },
+        "dpa-rex-refacror.angular.convertToMobileFirst": {
+          "type": "boolean",
+          "default": true,
+          "description": "When extracted CSS uses max-width media queries, automatically reorganise it to mobile-first (min-width) order."
+        },
+        "dpa-rex-refacror.angular.mixinsFile": {
+          "type": "string",
+          "default": "",
+          "description": "Workspace-relative path to a SCSS file containing breakpoint variables and @mixin definitions (e.g. 'src/styles/_mixins.scss'). When set, extracted component SCSS will use mixins instead of raw @media queries."
+        },
+        "dpa-rex-refacror.angular.mixinsImport": {
+          "type": "string",
+          "default": "",
+          "description": "Import statement added at the top of generated component SCSS files when a mixins file is configured (e.g. \"@use 'app' as *\" or \"@import 'mixins'\")."
         }
       }
     },

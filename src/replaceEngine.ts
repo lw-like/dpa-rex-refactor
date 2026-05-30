@@ -117,7 +117,7 @@ function getLine(text: string, starts: number[], line: number): string {
 const BUILTIN_EXCLUDES = [
     '**/node_modules/**', '**/.git/**', '**/.svn/**', '**/.hg/**',
     '**/dist/**', '**/out/**', '**/build/**', '**/bin/**', '**/obj/**',
-    '**/.next/**', '**/.nuxt/**', '**/.output/**',
+    '**/.next/**', '**/.nuxt/**', '**/.output/**', '**/.angular/**',
     '**/coverage/**', '**/.nyc_output/**', '**/.cache/**', '**/.parcel-cache/**',
     '**/vendor/**', '**/__pycache__/**', '**/.pytest_cache/**',
     '**/target/**', '**/.gradle/**', '**/.idea/**',

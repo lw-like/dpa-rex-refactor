@@ -4,9 +4,22 @@ import { analyzeHtml } from './htmlAnalyzer';
 import { scanClassUsage, ClassUsage, relativePath } from './cssScanner';
 import { resolveCustomComponents, ResolvedComponent } from './componentResolver';
 import { generateComponent, toPascalCase, toSelector, ComponentSpec, ComponentImport, TodoData } from './componentGenerator';
+import { parseMixinsFile, MixinMap } from './mixinsScanner';
 import { TodoReviewPanel } from '../ui/todoReviewPanel';
 
-export async function extractAngularComponent(): Promise<void> {
+export const LAST_EXTRACTION_KEY = 'lastAngularExtraction';
+
+export interface LastExtraction {
+    componentName: string;
+    selector: string;
+    componentDir: string;
+    parentFilePath: string;
+    originalHtml: string;
+    importStatement: string;
+    timestamp: string;
+}
+
+export async function extractAngularComponent(context: vscode.ExtensionContext): Promise<void> {
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.selection.isEmpty) {
         vscode.window.showWarningMessage('Select HTML to extract before running this command.');
@@ -57,6 +70,9 @@ export async function extractAngularComponent(): Promise<void> {
     const componentImports = await pickComponentImports(resolution, componentDir);
     if (componentImports === undefined) { return; } // cancelled
 
+    // 5b — Load mixin map and settings
+    const { mixinMap, mixinsImport, convertToMobileFirst } = await loadMixinSettings();
+
     const spec: ComponentSpec = {
         name: componentName,
         selector: toSelector(componentName),
@@ -66,6 +82,9 @@ export async function extractAngularComponent(): Promise<void> {
         classUsages,
         moveClasses,
         componentImports,
+        mixinMap,
+        mixinsImport,
+        convertToMobileFirst,
     };
 
     const files = generateComponent(spec);
@@ -90,16 +109,32 @@ export async function extractAngularComponent(): Promise<void> {
     }
 
     // Modify the existing parent file via WorkspaceEdit (replace selection + import)
+    const autoImport = vscode.workspace.getConfiguration('dpa-rex-refacror.angular').get<boolean>('autoImport', true);
     const edit = new vscode.WorkspaceEdit();
     const componentTag = `<${spec.selector} />`;
     edit.replace(editor.document.uri, editor.selection, componentTag);
-    insertImportInParent(edit, editor.document, componentName, files.tsFileName, componentDir);
+    const importStatement = buildImportStatement(componentName, files.tsFileName, componentDir, editor.document);
+    if (autoImport) {
+        await insertImportInParent(edit, editor.document, componentName, files.tsFileName, componentDir);
+    }
 
     const applied = await vscode.workspace.applyEdit(edit);
     if (!applied) {
         vscode.window.showErrorMessage('Failed to update parent component. New files were created but parent was not modified.');
         return;
     }
+
+    // Save extraction record for revert
+    const extraction: LastExtraction = {
+        componentName: `${componentName}Component`,
+        selector: spec.selector,
+        componentDir,
+        parentFilePath: editor.document.uri.fsPath,
+        originalHtml: selectedHtml,
+        importStatement,
+        timestamp: new Date().toISOString(),
+    };
+    await context.globalState.update(LAST_EXTRACTION_KEY, extraction);
 
     const tsUri = vscode.Uri.file(path.join(componentDir, files.tsFileName));
     const todoUri = vscode.Uri.file(path.join(componentDir, files.todoFileName));
@@ -114,6 +149,18 @@ export async function extractAngularComponent(): Promise<void> {
     vscode.window.showInformationMessage(
         `Component ${componentName}Component created. Review the Styles Checklist panel to clean up origin files.`,
     );
+}
+
+function buildImportStatement(
+    componentName: string,
+    tsFileName: string,
+    componentDir: string,
+    doc: vscode.TextDocument,
+): string {
+    const sourceDir = path.dirname(doc.uri.fsPath);
+    let importPath = path.relative(sourceDir, path.join(componentDir, tsFileName.replace('.ts', ''))).replace(/\\/g, '/');
+    if (!importPath.startsWith('.')) { importPath = './' + importPath; }
+    return `import { ${componentName}Component } from '${importPath}';`;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -159,32 +206,64 @@ async function pickSignals(names: string[], kind: 'inputs' | 'outputs'): Promise
     return picked?.map(p => p.label);
 }
 
-function insertImportInParent(
+/**
+ * Adds the extracted component to the parent component's `imports: []` array
+ * and prepends the TypeScript import statement.
+ *
+ * When the user selected HTML from a `.html` template file, the actual
+ * Angular component class lives in the paired `.ts` file — we detect and
+ * target that file automatically.
+ *
+ * Handles edge-cases in the imports array:
+ *   imports: []            → imports: [UserCardComponent]
+ *   imports: [A]           → imports: [A, UserCardComponent]
+ *   imports: [A, B,]       → imports: [A, B, UserCardComponent]  (trailing comma)
+ */
+async function insertImportInParent(
     edit: vscode.WorkspaceEdit,
-    doc: vscode.TextDocument,
+    sourceDoc: vscode.TextDocument,
     componentName: string,
     tsFileName: string,
     componentDir: string,
-): void {
-    const text = doc.getText();
+): Promise<void> {
+    // If the user selected HTML from a template file, find the paired .ts file
+    let targetUri = sourceDoc.uri;
+    if (targetUri.fsPath.endsWith('.html')) {
+        const tsPath = targetUri.fsPath.replace(/\.html$/, '.ts');
+        try {
+            await vscode.workspace.fs.stat(vscode.Uri.file(tsPath));
+            targetUri = vscode.Uri.file(tsPath);
+        } catch {
+            return; // No paired .ts component — skip auto-import
+        }
+    }
 
-    // Find imports: [ ... ] array in the parent component
+    let doc: vscode.TextDocument;
+    try {
+        doc = await vscode.workspace.openTextDocument(targetUri);
+    } catch { return; }
+
+    const text = doc.getText();
     const importsMatch = /imports\s*:\s*\[([^\]]*)\]/s.exec(text);
     if (!importsMatch) { return; }
 
-    const insertOffset = text.indexOf(importsMatch[0]) + importsMatch[0].lastIndexOf(']');
-    const insertPos = doc.positionAt(insertOffset);
+    const closePos = text.indexOf(importsMatch[0]) + importsMatch[0].lastIndexOf(']');
 
-    const sourceDir = path.dirname(doc.uri.fsPath);
-    let importPath = path.relative(sourceDir, path.join(componentDir, tsFileName.replace('.ts', ''))).replace(/\\/g, '/');
+    // Determine the right separator based on what's already in the array
+    const beforeClose = text.slice(0, closePos).trimEnd();
+    const lastChar = beforeClose[beforeClose.length - 1];
+    const arrayEntry = lastChar === '['  ? `${componentName}Component`    // empty array
+                     : lastChar === ','  ? ` ${componentName}Component`   // trailing comma
+                     :                    `, ${componentName}Component`;  // normal case
+
+    const targetDir = path.dirname(targetUri.fsPath);
+    let importPath = path.relative(targetDir, path.join(componentDir, tsFileName.replace('.ts', ''))).replace(/\\/g, '/');
     if (!importPath.startsWith('.')) { importPath = './' + importPath; }
 
-    const importStatement = `import { ${componentName}Component } from '${importPath}';\n`;
-    const arrayEntry = `, ${componentName}Component`;
+    const importLine = `import { ${componentName}Component } from '${importPath}';\n`;
 
-    // Prepend the import at top of file and add to imports array
-    edit.insert(doc.uri, new vscode.Position(0, 0), importStatement);
-    edit.insert(doc.uri, insertPos, arrayEntry);
+    edit.insert(targetUri, new vscode.Position(0, 0), importLine);
+    edit.insert(targetUri, doc.positionAt(closePos), arrayEntry);
 }
 
 async function pickComponentImports(
@@ -226,6 +305,33 @@ async function pickComponentImports(
             if (!importPath.startsWith('.')) { importPath = './' + importPath; }
             return { className: p.component!.className, importPath };
         });
+}
+
+async function loadMixinSettings(): Promise<{ mixinMap?: MixinMap; mixinsImport?: string; convertToMobileFirst: boolean }> {
+    const config = vscode.workspace.getConfiguration('dpa-rex-refacror.angular');
+    const mixinsFileSetting = config.get<string>('mixinsFile', '').trim();
+    const mixinsImport = config.get<string>('mixinsImport', '').trim() || undefined;
+    const convertToMobileFirst = config.get<boolean>('convertToMobileFirst', true);
+
+    if (!mixinsFileSetting) { return { mixinsImport, convertToMobileFirst }; }
+
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders?.length) { return { mixinsImport, convertToMobileFirst }; }
+
+    const absPath = path.isAbsolute(mixinsFileSetting)
+        ? mixinsFileSetting
+        : path.join(folders[0].uri.fsPath, mixinsFileSetting);
+
+    try {
+        const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(absPath));
+        const mixinMap = parseMixinsFile(Buffer.from(bytes).toString('utf8'));
+        return { mixinMap, mixinsImport, convertToMobileFirst };
+    } catch {
+        vscode.window.showWarningMessage(
+            `Angular: could not read mixins file "${mixinsFileSetting}" — @media queries will not be replaced with mixins.`,
+        );
+        return { mixinsImport, convertToMobileFirst };
+    }
 }
 
 function toKebabCase(pascal: string): string {

@@ -1,6 +1,9 @@
 .vscode/**
 .vscode-test/**
 src/**
+!src/ui/replacePanel/replacePanel.html
+!src/ui/replacePanel/replacePanel.css
+!src/ui/replacePanel/replacePanel.js
 .gitignore
 .eslintrc.json
 **/*.map

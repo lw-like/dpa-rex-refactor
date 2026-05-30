@@ -13,6 +13,7 @@
     <button class="tab-btn active" data-tab="replace">Replace</button>
     <button class="tab-btn" data-tab="planner">Planner</button>
     <button class="tab-btn" data-tab="angular">Angular</button>
+    <button class="tab-btn" data-tab="config">Config</button>
     <button id="btn-analyze" class="tab-analyze" title="Analyze active editor selection in Planner (Ctrl+Shift+Alt+R)">Analyze</button>
   </nav>
 
@@ -231,6 +232,37 @@
     </div>
   </div><!-- /tab-angular -->
 
+  <!-- ── Config tab ─────────────────────────────────────────────────────── -->
+  <div id="tab-config" class="tab-pane hidden">
+
+    <div class="config-section">
+      <h2>Angular Extraction</h2>
+      <label class="config-row">
+        <input type="checkbox" id="chk-auto-import">
+        <span>Auto-import extracted component</span>
+      </label>
+      <p class="config-hint">Add the new component to the parent's <code>imports: []</code> array and TypeScript import statement automatically. Works for both <code>.ts</code> and <code>.html</code> template files.</p>
+
+      <label class="config-row" style="margin-top:10px">
+        <input type="checkbox" id="chk-mobile-first">
+        <span>Convert max-width to mobile-first</span>
+      </label>
+      <p class="config-hint">When extracted CSS uses max-width media queries, reorganise to min-width (mobile-first) order.</p>
+    </div>
+
+    <div class="config-sep"></div>
+
+    <div class="config-section">
+      <h2>Last Extraction</h2>
+      <div id="last-extraction-info" class="config-hint">No extraction recorded yet.</div>
+      <div id="revert-area" class="hidden" style="margin-top:10px">
+        <button id="btn-revert" class="danger">Revert last extraction</button>
+        <p class="config-hint" style="margin-top:6px">Deletes the component files and restores the original HTML in the parent file.</p>
+      </div>
+    </div>
+
+  </div><!-- /tab-config -->
+
   <!-- Floating mark toolbar — fixed position, shown on text selection in sample -->
   <div id="mark-toolbar" class="mark-toolbar hidden">
     <button id="btn-mark-literal" class="mark-btn mark-lit">Literal</button>
@@ -238,6 +270,7 @@
     <button id="btn-mark-attr"    class="mark-btn mark-attr">Attr value</button>
     <button id="btn-mark-skip"    class="mark-btn mark-any">Skip</button>
     <button id="btn-mark-must"    class="mark-btn mark-must">Must contain</button>
+    <button id="btn-mark-outer"   class="mark-btn mark-out">Outer</button>
   </div>
 
   <script src="{{jsUri}}"></script>
