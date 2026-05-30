@@ -1049,6 +1049,24 @@ mark {
 }
 #planner-loading.hidden { display: none; }
 
+/* ── Config tab ──────────────────────────────────────────────────────────── */
+.config-section { margin-bottom: 16px; }
+.config-section h2 { margin-bottom: 8px; }
+.config-sep { border: none; border-top: 1px solid var(--vscode-panel-border); margin: 14px 0; }
+.config-row {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; font-size: 0.9em; margin-bottom: 6px;
+}
+.config-row input[type=checkbox] { cursor: pointer; }
+.config-hint { font-size: 0.82em; color: var(--vscode-descriptionForeground); line-height: 1.4; }
+.last-extraction-card {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px; padding: 8px 10px;
+  font-size: 0.85em; line-height: 1.6;
+}
+.last-extraction-card .le-name { font-weight: 600; }
+.last-extraction-card .le-meta { color: var(--vscode-descriptionForeground); font-size: 0.9em; font-family: var(--vscode-editor-font-family); }
+
 /* ── Angular tab ─────────────────────────────────────────────────────────── */
 .angular-hdr {
   display: flex;

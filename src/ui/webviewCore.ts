@@ -10,10 +10,12 @@ import {
 import { extractPatterns } from '../patternExtractor';
 import { TodoData } from '../angular/componentGenerator';
 import { TodoReviewPanel } from './todoReviewPanel';
+import { LAST_EXTRACTION_KEY, LastExtraction } from '../angular/extractCommand';
 
 export interface WebviewMessage {
     type: string;
     fsPath?: string;
+    value?: boolean;
     name?: string;
     steps?: PipelineStep[];
     // Single-step compat (step 0 values, sent alongside steps[]):
@@ -40,6 +42,7 @@ export class MessageHandler {
     constructor(
         private store: PatternStore,
         private readonly post: (msg: object) => void,
+        private readonly context: vscode.ExtensionContext,
     ) {}
 
     dispose(): void {
@@ -366,6 +369,105 @@ export class MessageHandler {
                 break;
             }
 
+            case 'loadConfig': {
+                const cfg = vscode.workspace.getConfiguration('dpa-rex-refacror.angular');
+                const lastExtraction = this.context.globalState.get<LastExtraction>(LAST_EXTRACTION_KEY) ?? null;
+                this.post({
+                    type: 'configData',
+                    settings: {
+                        autoImport: cfg.get<boolean>('autoImport', true),
+                        convertToMobileFirst: cfg.get<boolean>('convertToMobileFirst', true),
+                        mixinsFile: cfg.get<string>('mixinsFile', ''),
+                        mixinsImport: cfg.get<string>('mixinsImport', ''),
+                    },
+                    lastExtraction,
+                });
+                break;
+            }
+
+            case 'setAutoImport': {
+                await vscode.workspace.getConfiguration('dpa-rex-refacror.angular')
+                    .update('autoImport', msg.value, vscode.ConfigurationTarget.Workspace);
+                break;
+            }
+
+            case 'setConvertToMobileFirst': {
+                await vscode.workspace.getConfiguration('dpa-rex-refacror.angular')
+                    .update('convertToMobileFirst', msg.value, vscode.ConfigurationTarget.Workspace);
+                break;
+            }
+
+            case 'revertLastExtraction': {
+                const extraction = this.context.globalState.get<LastExtraction>(LAST_EXTRACTION_KEY);
+                if (!extraction) { this.postError('No extraction to revert.'); break; }
+
+                const confirm = await vscode.window.showWarningMessage(
+                    `Revert ${extraction.componentName}? This will delete the component files and restore the parent file.`,
+                    { modal: true }, 'Revert',
+                );
+                if (confirm !== 'Revert') { break; }
+
+                try {
+                    // Delete component directory
+                    await vscode.workspace.fs.delete(
+                        vscode.Uri.file(extraction.componentDir),
+                        { recursive: true, useTrash: true },
+                    );
+                } catch (e) {
+                    this.postError(`Could not delete component files: ${e instanceof Error ? e.message : String(e)}`);
+                    break;
+                }
+
+                // Step 1: restore original HTML in the template file (the file user edited)
+                try {
+                    const parentUri = vscode.Uri.file(extraction.parentFilePath);
+                    const parentDoc = await vscode.workspace.openTextDocument(parentUri);
+                    let parentText = parentDoc.getText();
+
+                    const selectorRe = new RegExp(`<${escapeForRegex(extraction.selector)}\\s*\\/?>`, 'g');
+                    parentText = parentText.replace(selectorRe, extraction.originalHtml);
+
+                    // If the parent is a .ts file with an inline template, also strip the import here
+                    if (!extraction.parentFilePath.endsWith('.html')) {
+                        parentText = removeImportFromTs(parentText, extraction.importStatement, extraction.componentName);
+                    }
+
+                    const parentEdit = new vscode.WorkspaceEdit();
+                    parentEdit.replace(parentUri,
+                        new vscode.Range(parentDoc.positionAt(0), parentDoc.positionAt(parentDoc.getText().length)),
+                        parentText,
+                    );
+                    await vscode.workspace.applyEdit(parentEdit);
+                } catch {
+                    vscode.window.showWarningMessage('Component files deleted but template file could not be auto-restored — please undo manually.');
+                }
+
+                // Step 2: remove import statement + imports[] entry from the .ts component file
+                // (when editing a .html template the import goes into the paired .ts, not the .html)
+                if (extraction.parentFilePath.endsWith('.html')) {
+                    const tsFsPath = extraction.parentFilePath.replace(/\.html$/, '.ts');
+                    try {
+                        await vscode.workspace.fs.stat(vscode.Uri.file(tsFsPath));
+                        const tsUri = vscode.Uri.file(tsFsPath);
+                        const tsDoc = await vscode.workspace.openTextDocument(tsUri);
+                        const cleaned = removeImportFromTs(tsDoc.getText(), extraction.importStatement, extraction.componentName);
+                        const tsEdit = new vscode.WorkspaceEdit();
+                        tsEdit.replace(tsUri,
+                            new vscode.Range(tsDoc.positionAt(0), tsDoc.positionAt(tsDoc.getText().length)),
+                            cleaned,
+                        );
+                        await vscode.workspace.applyEdit(tsEdit);
+                    } catch {
+                        vscode.window.showWarningMessage('Import not removed from paired .ts file — please remove it manually.');
+                    }
+                }
+
+                await this.context.globalState.update(LAST_EXTRACTION_KEY, undefined);
+                this.post({ type: 'configData', settings: null, lastExtraction: null });
+                vscode.window.showInformationMessage(`Reverted: ${extraction.componentName} deleted.`);
+                break;
+            }
+
             case 'loadAngularTodos': {
                 const EXCLUDE = '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/build/**}';
                 const todoFiles = await vscode.workspace.findFiles('**/*.todo.json', EXCLUDE);
@@ -494,6 +596,37 @@ export class MessageHandler {
     private postError(message: string): void {
         this.post({ type: 'error', message });
     }
+}
+
+function escapeForRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Removes the TypeScript import statement line and the component class name
+ * from the `imports: []` array in a component file's text.
+ *
+ * Handles all separator cases in the array:
+ *   [A, Comp]        → [A]
+ *   [Comp, A]        → [A]
+ *   [Comp]           → []
+ *   trailing commas  → cleaned up
+ */
+function removeImportFromTs(text: string, importStatement: string, componentName: string): string {
+    // Remove the import statement line (try with and without trailing newline)
+    text = text
+        .replace(importStatement + '\n', '')
+        .replace('\n' + importStatement, '')
+        .replace(importStatement, '');
+
+    // Remove the class name from the imports array — handle all separator variants
+    const esc = escapeForRegex(componentName);
+    text = text
+        .replace(new RegExp(`,\\s*${esc}`, 'g'), '')   // ", Comp"  — preceded by comma
+        .replace(new RegExp(`${esc}\\s*,\\s*`, 'g'), '') // "Comp, "  — followed by comma
+        .replace(new RegExp(esc, 'g'), '');              // "Comp"    — alone in array
+
+    return text;
 }
 
 export function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {

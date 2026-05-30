@@ -1143,6 +1143,15 @@ window.addEventListener('message', ({ data: msg }) => {
         case 'importDone':
             break;
 
+        case 'configData': {
+            if (msg.settings) {
+                chkAutoImportEl.checked  = !!msg.settings.autoImport;
+                chkMobileFirstEl.checked = !!msg.settings.convertToMobileFirst;
+            }
+            renderLastExtraction(msg.lastExtraction ?? null);
+            break;
+        }
+
         case 'angularTodosResult': {
             const items = msg.items ?? [];
             if (!items.length) {
@@ -1294,6 +1303,47 @@ function loadAngularTodos() {
 }
 
 document.querySelector('[data-tab="angular"]').addEventListener('click', loadAngularTodos);
+
+// ─── Config tab ───────────────────────────────────────────────────────────────
+
+const chkAutoImportEl   = $('chk-auto-import');
+const chkMobileFirstEl  = $('chk-mobile-first');
+const lastExtractionEl  = $('last-extraction-info');
+const revertAreaEl      = $('revert-area');
+const btnRevertEl       = $('btn-revert');
+
+document.querySelector('[data-tab="config"]').addEventListener('click', () => {
+    vscode.postMessage({ type: 'loadConfig' });
+});
+
+chkAutoImportEl.addEventListener('change', () => {
+    vscode.postMessage({ type: 'setAutoImport', value: chkAutoImportEl.checked });
+});
+
+chkMobileFirstEl.addEventListener('change', () => {
+    vscode.postMessage({ type: 'setConvertToMobileFirst', value: chkMobileFirstEl.checked });
+});
+
+btnRevertEl.addEventListener('click', () => {
+    vscode.postMessage({ type: 'revertLastExtraction' });
+});
+
+function renderLastExtraction(le) {
+    if (!le) {
+        lastExtractionEl.textContent = 'No extraction recorded yet.';
+        revertAreaEl.classList.add('hidden');
+        return;
+    }
+    const date = new Date(le.timestamp).toLocaleString();
+    lastExtractionEl.innerHTML =
+        '<div class="last-extraction-card">' +
+        '<div class="le-name">' + esc(le.componentName) + '</div>' +
+        '<div class="le-meta">' + date + '</div>' +
+        '<div class="le-meta">Dir: ' + esc(le.componentDir) + '</div>' +
+        '<div class="le-meta">Parent: ' + esc(le.parentFilePath) + '</div>' +
+        '</div>';
+    revertAreaEl.classList.remove('hidden');
+}
 $('btn-refresh-angular').addEventListener('click', loadAngularTodos);
 
 angularListEl.addEventListener('click', e => {

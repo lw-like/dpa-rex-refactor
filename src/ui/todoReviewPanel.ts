@@ -180,6 +180,15 @@ h1 { font-size: 1.1em; font-weight: 600; padding-bottom: 8px; border-bottom: 1px
     border: 1px solid rgba(156, 39, 176, 0.4);
     border-radius: 3px; padding: 0 5px;
 }
+.convert-badge {
+    flex-shrink: 0;
+    font-size: 0.72em;
+    color: var(--vscode-foreground);
+    background: rgba(255, 140, 0, 0.15);
+    border: 1px solid rgba(255, 140, 0, 0.45);
+    border-radius: 3px; padding: 0 5px;
+    white-space: nowrap;
+}
 .goto-btn {
     flex-shrink: 0;
     background: none;
@@ -236,6 +245,7 @@ function render() {
                 (item.mediaContext
                     ? '<span class="media-badge">' + esc(item.mediaContext) + '</span>'
                     : (item.isRoot ? '<span class="bem">(direct properties)</span>' : '<span class="bem">&#8594; ' + esc(item.selectorChain.join(' > ')) + '</span>')) +
+                (item.wasConverted ? '<span class="convert-badge" title="This CSS was reorganised from desktop-first (max-width) to mobile-first (min-width) in the generated SCSS">&#8597; converted</span>' : '') +
                 '<button class="goto-btn" data-action="goto" data-gi="' + gi + '" data-ii="' + ii + '" title="Go to selector in origin file">&#8599;</button>' +
                 '</div>' +
                 '<pre>' + esc(item.content) + '</pre>' +

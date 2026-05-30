@@ -10,7 +10,7 @@ export class ReplacePanel {
     private readonly handler: MessageHandler;
     private readonly disposables: vscode.Disposable[] = [];
 
-    static createOrShow(extensionUri: vscode.Uri, store: PatternStore): void {
+    static createOrShow(extensionUri: vscode.Uri, store: PatternStore, context: vscode.ExtensionContext): void {
         const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
 
         if (ReplacePanel.currentPanel) {
@@ -31,12 +31,12 @@ export class ReplacePanel {
             }
         );
 
-        ReplacePanel.currentPanel = new ReplacePanel(panel, store, extensionUri);
+        ReplacePanel.currentPanel = new ReplacePanel(panel, store, extensionUri, context);
     }
 
-    private constructor(panel: vscode.WebviewPanel, store: PatternStore, extensionUri: vscode.Uri) {
+    private constructor(panel: vscode.WebviewPanel, store: PatternStore, extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
         this.panel = panel;
-        this.handler = new MessageHandler(store, msg => this.panel.webview.postMessage(msg));
+        this.handler = new MessageHandler(store, msg => this.panel.webview.postMessage(msg), context);
         this.panel.webview.html = buildHtml(panel.webview, extensionUri);
 
         this.panel.onDidDispose(() => this.dispose(), null, this.disposables);

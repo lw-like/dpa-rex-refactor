@@ -1,4 +1,4 @@
-import { ClassUsage, relativePath } from './cssScanner';
+import { ClassUsage, ScssDefinition, relativePath } from './cssScanner';
 import { MixinMap, resolveMixin } from './mixinsScanner';
 
 export interface ComponentImport {
@@ -15,8 +15,9 @@ export interface ComponentSpec {
     classUsages: ClassUsage[];
     moveClasses: string[];  // class names the user confirmed to move into component SCSS
     componentImports: ComponentImport[];
-    mixinMap?: MixinMap;    // when set, @media blocks are replaced with @include calls
-    mixinsImport?: string;  // import statement prepended to the generated SCSS
+    mixinMap?: MixinMap;           // when set, @media blocks are replaced with @include calls
+    mixinsImport?: string;         // import statement prepended to the generated SCSS
+    convertToMobileFirst?: boolean; // default true — reorganise max-width CSS to min-width
 }
 
 export interface GeneratedFiles {
@@ -100,7 +101,7 @@ function buildScss(spec: ComponentSpec): string {
     if (movedUsages.length) {
         lines.push('// Component styles — moved from global (single-use classes)');
         lines.push('');
-        lines.push(...renderMovedClasses(movedUsages, spec.mixinMap));
+        lines.push(...renderMovedClasses(movedUsages, spec.mixinMap, spec.convertToMobileFirst !== false));
     }
 
     if (keptUsages.length) {
@@ -137,6 +138,128 @@ function buildScss(spec: ComponentSpec): string {
  *       }
  *   }
  */
+// ─── Mobile-first conversion ─────────────────────────────────────────────────
+
+function isMaxWidth(mediaContext: string): boolean {
+    return /max-width/i.test(mediaContext);
+}
+
+function extractMediaPx(mediaContext: string): number {
+    return parseInt(/:\s*(\d+)px/i.exec(mediaContext)?.[1] ?? '0');
+}
+
+/**
+ * Parse flat CSS property declarations from a raw content string.
+ * Runs `extractDirectProperties` first to strip nested blocks.
+ */
+function parseProperties(rawContent: string): Map<string, string> {
+    const props = new Map<string, string>();
+    for (const decl of extractDirectProperties(rawContent).split(';')) {
+        const idx = decl.indexOf(':');
+        if (idx < 0) { continue; }
+        const prop = decl.slice(0, idx).trim();
+        const val  = decl.slice(idx + 1).trim();
+        if (prop && val) { props.set(prop, val); }
+    }
+    return props;
+}
+
+/** Properties in `next` that differ from `prev`. */
+function diffProps(prev: Map<string, string>, next: Map<string, string>): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const [k, v] of next) {
+        if (prev.get(k) !== v) { out.set(k, v); }
+    }
+    return out;
+}
+
+/** Serialize a property map to indented declaration lines. */
+function propsToLines(props: Map<string, string>, indent: string): string[] {
+    return [...props.entries()].map(([k, v]) => `${indent}${k}: ${v};`);
+}
+
+interface MinWidthBlock {
+    px: number;
+    lines: string[];           // ready-to-use indented CSS lines
+    originalContext: string;   // the @media(max-width:Npx) this block was converted from
+}
+
+interface MobileFirstResult {
+    mobileBaseLines: string[];
+    minWidthBlocks: MinWidthBlock[];
+}
+
+/**
+ * Converts desktop-first (max-width) definitions into mobile-first (min-width).
+ *
+ * In desktop-first, at the smallest screen ALL max-width queries apply.
+ * CSS cascade: later rules override earlier ones — the SMALLEST max-width breakpoint
+ * (placed last in the file) has the highest precedence at mobile sizes.
+ *
+ * Algorithm:
+ *   1. Sort breakpoints ascending (576 → 768 → 992 → 1200).
+ *   2. Mobile props = base merged with ALL max-width overrides (largest first, so smallest wins).
+ *   3. For each step up (576→769, 768→993, …), compute the cascaded props for that range.
+ *   4. Diff against the previous level → only changed properties at each min-width.
+ */
+function convertToMobileFirst(
+    baseDef: ScssDefinition | undefined,
+    maxWidthDefs: ScssDefinition[],
+    innerIndent: string,
+): MobileFirstResult {
+    const defsAsc = [...maxWidthDefs]
+        .sort((a, b) => extractMediaPx(a.mediaContext!) - extractMediaPx(b.mediaContext!));
+
+    const baseProps = parseProperties(baseDef?.rawContent ?? '');
+
+    // Compute cascaded properties for the screen range "above defsAsc[startIdx-1]".
+    // startIdx=0 → all breakpoints apply (mobile); startIdx=n → only base (>largest breakpoint).
+    const propsAtLevel = (startIdx: number): Map<string, string> => {
+        const result = new Map(baseProps);
+        // Apply from largest to smallest so smallest wins (matches desktop-first cascade)
+        for (const def of defsAsc.slice(startIdx).reverse()) {
+            parseProperties(def.rawContent).forEach((v, k) => result.set(k, v));
+        }
+        return result;
+    };
+
+    const mobileProps = propsAtLevel(0);
+    const mobileBaseLines = propsToLines(mobileProps, innerIndent);
+
+    const minWidthBlocks: MinWidthBlock[] = [];
+    let prev = mobileProps;
+
+    for (let i = 1; i <= defsAsc.length; i++) {
+        const here    = propsAtLevel(i);
+        const changes = diffProps(prev, here);
+        if (changes.size > 0) {
+            minWidthBlocks.push({
+                px: extractMediaPx(defsAsc[i - 1].mediaContext!) + 1,
+                originalContext: defsAsc[i - 1].mediaContext!,
+                lines: propsToLines(changes, innerIndent),
+            });
+        }
+        prev = here;
+    }
+
+    return { mobileBaseLines, minWidthBlocks };
+}
+
+/** Look up a min-width mixin by pixel value, trying px then px−1. */
+function mixinForMinWidth(px: number, mixinMap?: MixinMap): string | undefined {
+    if (!mixinMap) { return undefined; }
+    return (
+        mixinMap.get(`min-width:${px}`)?.name ??
+        mixinMap.get(`min-width:${px - 1}`)?.name
+    );
+}
+
+/** Renders the `@include name` or `@media (min-width: Npx)` opener for a converted block. */
+function minWidthOrMixin(px: number, mixinMap?: MixinMap): string {
+    const name = mixinForMinWidth(px, mixinMap);
+    return name ? `@include ${name}` : `@media (min-width: ${px}px)`;
+}
+
 /** Renders `@media` or `@include mixin` depending on whether a matching mixin is found. */
 function mediaOrMixin(mediaContext: string, mixinMap?: MixinMap): string {
     if (mixinMap) {
@@ -146,7 +269,7 @@ function mediaOrMixin(mediaContext: string, mixinMap?: MixinMap): string {
     return mediaContext;
 }
 
-function renderMovedClasses(usages: ClassUsage[], mixinMap?: MixinMap): string[] {
+function renderMovedClasses(usages: ClassUsage[], mixinMap?: MixinMap, doConvert = true): string[] {
     const lines: string[] = [];
 
     // Separate classes we have source info for from those we don't
@@ -171,26 +294,47 @@ function renderMovedClasses(usages: ClassUsage[], mixinMap?: MixinMap): string[]
         if (allTopLevel) {
             // Not BEM — emit base block then each @media variant as a separate block
             for (const u of group) {
-                const defs     = u.nodeInfo!.allDefinitions;
-                const baseDef  = defs.find(d => !d.mediaContext);
+                const defs      = u.nodeInfo!.allDefinitions;
+                const baseDef   = defs.find(d => !d.mediaContext);
                 const mediaDefs = defs.filter(d => d.mediaContext);
+                const allMax    = doConvert && mediaDefs.length > 0 && mediaDefs.every(d => isMaxWidth(d.mediaContext!));
 
-                if (baseDef) {
-                    lines.push(originComment(u.nodeInfo!.selectorChain));
+                lines.push(originComment(u.nodeInfo!.selectorChain));
+
+                if (allMax) {
+                    // Convert desktop-first → mobile-first
+                    lines.push('// ↑ converted from max-width (desktop-first) to min-width (mobile-first)');
+                    const { mobileBaseLines, minWidthBlocks } = convertToMobileFirst(baseDef, mediaDefs, '    ');
                     lines.push(`${rootSel} {`);
-                    lines.push(...dedentContent(baseDef.rawContent, '    '));
+                    lines.push(...mobileBaseLines);
                     lines.push('}');
                     lines.push('');
-                }
-
-                for (const mDef of mediaDefs) {
-                    lines.push(originComment(u.nodeInfo!.selectorChain, mDef.mediaContext));
-                    lines.push(`${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
-                    lines.push(`    ${rootSel} {`);
-                    lines.push(...dedentContent(mDef.rawContent, '        '));
-                    lines.push('    }');
-                    lines.push('}');
-                    lines.push('');
+                    for (const block of minWidthBlocks) {
+                        lines.push(originComment(u.nodeInfo!.selectorChain, `@media (min-width: ${block.px}px)`));
+                        lines.push(`// converted from: ${block.originalContext}`);
+                        lines.push(`${minWidthOrMixin(block.px, mixinMap)} {`);
+                        lines.push(`    ${rootSel} {`);
+                        lines.push(...block.lines.map(l => '    ' + l));
+                        lines.push('    }');
+                        lines.push('}');
+                        lines.push('');
+                    }
+                } else {
+                    if (baseDef) {
+                        lines.push(`${rootSel} {`);
+                        lines.push(...dedentContent(baseDef.rawContent, '    '));
+                        lines.push('}');
+                        lines.push('');
+                    }
+                    for (const mDef of mediaDefs) {
+                        lines.push(originComment(u.nodeInfo!.selectorChain, mDef.mediaContext));
+                        lines.push(`${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
+                        lines.push(`    ${rootSel} {`);
+                        lines.push(...dedentContent(mDef.rawContent, '        '));
+                        lines.push('    }');
+                        lines.push('}');
+                        lines.push('');
+                    }
                 }
             }
         } else {
@@ -202,40 +346,78 @@ function renderMovedClasses(usages: ClassUsage[], mixinMap?: MixinMap): string[]
                 const baseDef   = defs.find(d => !d.mediaContext);
                 const mediaDefs = defs.filter(d =>  d.mediaContext);
 
+                const allMax = mediaDefs.length > 0 && mediaDefs.every(d => isMaxWidth(d.mediaContext!));
+
                 if (chain.length === 1) {
-                    // Root class: emit only its direct properties (strip nested blocks to
-                    // avoid duplicating BEM children rendered individually below).
-                    if (baseDef) {
-                        const props = extractDirectProperties(baseDef.rawContent);
-                        if (props.trim()) {
-                            lines.push(`    ${originComment(chain)}`);
-                            lines.push(...dedentContent(props, '    '));
+                    // Root BEM class: only direct properties (no nested blocks)
+                    if (allMax) {
+                        lines.push(`    ${originComment(chain)}`);
+                        lines.push('    // ↑ converted from max-width to min-width');
+                        const { mobileBaseLines, minWidthBlocks } = convertToMobileFirst(
+                            baseDef ? { ...baseDef, rawContent: extractDirectProperties(baseDef.rawContent) } : undefined,
+                            mediaDefs.map(d => ({ ...d, rawContent: extractDirectProperties(d.rawContent) })),
+                            '        ',
+                        );
+                        if (mobileBaseLines.length) {
+                            lines.push(...mobileBaseLines);
                         }
-                    }
-                    for (const mDef of mediaDefs) {
-                        const props = extractDirectProperties(mDef.rawContent);
-                        if (props.trim()) {
+                        for (const block of minWidthBlocks) {
                             lines.push('');
-                            lines.push(`    ${originComment(chain, mDef.mediaContext)}`);
-                            lines.push(`    ${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
-                            lines.push(...dedentContent(props, '        '));
+                            lines.push(`    ${originComment(chain, `@media (min-width: ${block.px}px)`)}`);
+                            lines.push(`    // converted from: ${block.originalContext}`);
+                            lines.push(`    ${minWidthOrMixin(block.px, mixinMap)} {`);
+                            lines.push(...block.lines);
                             lines.push('    }');
+                        }
+                    } else {
+                        if (baseDef) {
+                            const props = extractDirectProperties(baseDef.rawContent);
+                            if (props.trim()) {
+                                lines.push(`    ${originComment(chain)}`);
+                                lines.push(...dedentContent(props, '    '));
+                            }
+                        }
+                        for (const mDef of mediaDefs) {
+                            const props = extractDirectProperties(mDef.rawContent);
+                            if (props.trim()) {
+                                lines.push('');
+                                lines.push(`    ${originComment(chain, mDef.mediaContext)}`);
+                                lines.push(`    ${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
+                                lines.push(...dedentContent(props, '        '));
+                                lines.push('    }');
+                            }
                         }
                     }
                 } else {
-                    // BEM child — base style + nested @media variants inside the selector
+                    // BEM child — base + @media variants
                     const leafSel = chain[chain.length - 1];
                     lines.push(`    ${originComment(chain)}`);
-                    lines.push(`    ${leafSel} {`);
-                    if (baseDef) {
-                        lines.push(...dedentContent(baseDef.rawContent, '        '));
-                    }
-                    for (const mDef of mediaDefs) {
-                        lines.push('');
-                        lines.push(`        ${originComment(chain, mDef.mediaContext)}`);
-                        lines.push(`        ${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
-                        lines.push(...dedentContent(mDef.rawContent, '            '));
-                        lines.push('        }');
+                    if (allMax) {
+                        lines.push('    // ↑ converted from max-width to min-width');
+                        const { mobileBaseLines, minWidthBlocks } = convertToMobileFirst(baseDef, mediaDefs, '        ');
+                        lines.push(`    ${leafSel} {`);
+                        lines.push(...mobileBaseLines);
+                        for (const block of minWidthBlocks) {
+                            lines.push('');
+                            lines.push(`        ${originComment(chain, `@media (min-width: ${block.px}px)`)}`);
+                            lines.push(`        // converted from: ${block.originalContext}`);
+                            lines.push(`        ${minWidthOrMixin(block.px, mixinMap)} {`);
+                            lines.push(...block.lines);
+                            lines.push('        }');
+                        }
+                        lines.push('    }');
+                    } else {
+                        lines.push(`    ${leafSel} {`);
+                        if (baseDef) {
+                            lines.push(...dedentContent(baseDef.rawContent, '        '));
+                        }
+                        for (const mDef of mediaDefs) {
+                            lines.push('');
+                            lines.push(`        ${originComment(chain, mDef.mediaContext)}`);
+                            lines.push(`        ${mediaOrMixin(mDef.mediaContext!, mixinMap)} {`);
+                            lines.push(...dedentContent(mDef.rawContent, '            '));
+                            lines.push('        }');
+                        }
                     }
                     lines.push('    }');
                     lines.push('');
@@ -265,8 +447,9 @@ export interface TodoItem {
     className: string;
     selectorChain: string[];
     isRoot: boolean;
-    mediaContext?: string;   // undefined = base definition; "@media ..." = media variant
-    content: string;         // SCSS snippet with origin comment at top — one definition only
+    mediaContext?: string;    // undefined = base definition; "@media ..." = media variant
+    wasConverted?: boolean;   // true when this definition was reorganised to mobile-first
+    content: string;          // SCSS snippet with origin comment at top — one definition only
     checked: boolean;
 }
 
@@ -301,11 +484,16 @@ function buildTodo(spec: ComponentSpec, scssFileName: string): string {
         const items: TodoItem[] = [];
 
         for (const u of usages) {
-            const chain  = u.nodeInfo!.selectorChain;
-            const isRoot = chain.length === 1;
+            const chain     = u.nodeInfo!.selectorChain;
+            const isRoot    = chain.length === 1;
+            const defs      = u.nodeInfo!.allDefinitions;
+            const mediaDefs = defs.filter(d => d.mediaContext);
+            const wasConverted = (spec.convertToMobileFirst !== false)
+                && mediaDefs.length > 0
+                && mediaDefs.every(d => isMaxWidth(d.mediaContext!));
 
             // One TodoItem per definition (base + each @media variant separately)
-            for (const def of u.nodeInfo!.allDefinitions) {
+            for (const def of defs) {
                 const comment = originComment(chain, def.mediaContext);
                 let content: string;
 
@@ -340,6 +528,7 @@ function buildTodo(spec: ComponentSpec, scssFileName: string): string {
                     selectorChain: chain,
                     isRoot,
                     mediaContext: def.mediaContext,
+                    wasConverted,
                     content,
                     checked: false,
                 });
