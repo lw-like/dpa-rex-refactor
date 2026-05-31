@@ -13,7 +13,23 @@
     "onCommand:dpa-rex-refacror.openPanel",
     "onCommand:dpa-rex-refacror.analyzeSelection",
     "onCommand:dpa-rex-refacror.extractAngularComponent",
-    "onView:dpa-rex-refacror.sidebar"
+    "onView:dpa-rex-refacror.sidebar",
+    "onCommand:dpa-rex-refacror.detectDefaultChangeDetection",
+    "onCommand:dpa-rex-refacror.detectShareReplayLeak",
+    "onCommand:dpa-rex-refacror.detectListTracking",
+    "onCommand:dpa-rex-refacror.detectHeavyImports",
+    "onCommand:dpa-rex-refacror.detectNestedSwitchMap",
+    "onCommand:dpa-rex-refacror.detectTemplateFunctionCalls",
+    "onCommand:dpa-rex-refacror.detectHttpInEffect",
+    "onCommand:dpa-rex-refacror.detectUnmanagedSubscriptions",
+    "onCommand:dpa-rex-refacror.detectUnmanagedTimersAndListeners",
+    "onCommand:dpa-rex-refacror.detectUnoptimizedImages",
+    "onCommand:dpa-rex-refacror.detectManualChangeDetection",
+    "onCommand:dpa-rex-refacror.detectRepeatedExpressions",
+    "onCommand:dpa-rex-refacror.detectLargeRenderedLists",
+    "onCommand:dpa-rex-refacror.detectUnsafeToSignal",
+    "onCommand:dpa-rex-refacror.detectNestedSubscriptions",
+    "onCommand:dpa-rex-refacror.detectEagerlyLoadedRoutes"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -47,6 +63,70 @@
       {
         "command": "dpa-rex-refacror.extractAngularComponent",
         "title": "Extract to Angular Component"
+      },
+      {
+        "command": "dpa-rex-refacror.detectDefaultChangeDetection",
+        "title": "Angular Audit: Detect Default Change Detection"
+      },
+      {
+        "command": "dpa-rex-refacror.detectShareReplayLeak",
+        "title": "Angular Audit: Detect shareReplay() Memory Leak"
+      },
+      {
+        "command": "dpa-rex-refacror.detectListTracking",
+        "title": "Angular Audit: Detect List Tracking Issues"
+      },
+      {
+        "command": "dpa-rex-refacror.detectHeavyImports",
+        "title": "Angular Audit: Detect Heavy Library Imports"
+      },
+      {
+        "command": "dpa-rex-refacror.detectNestedSwitchMap",
+        "title": "Angular Audit: Detect Nested switchMap Chains"
+      },
+      {
+        "command": "dpa-rex-refacror.detectTemplateFunctionCalls",
+        "title": "Angular Perf: Detect Function Calls in Templates"
+      },
+      {
+        "command": "dpa-rex-refacror.detectHttpInEffect",
+        "title": "Angular Perf: Detect HTTP Calls Inside effect()"
+      },
+      {
+        "command": "dpa-rex-refacror.detectUnmanagedSubscriptions",
+        "title": "Angular Perf: Detect Subscriptions Without Cleanup"
+      },
+      {
+        "command": "dpa-rex-refacror.detectUnmanagedTimersAndListeners",
+        "title": "Angular Perf: Detect Unmanaged Timers and Event Listeners"
+      },
+      {
+        "command": "dpa-rex-refacror.detectUnoptimizedImages",
+        "title": "Angular Perf: Detect Images Not Using NgOptimizedImage"
+      },
+      {
+        "command": "dpa-rex-refacror.detectManualChangeDetection",
+        "title": "Angular Perf: Detect Manual Change Detection Triggers"
+      },
+      {
+        "command": "dpa-rex-refacror.detectRepeatedExpressions",
+        "title": "Angular Perf: Detect Repeated Template Expressions"
+      },
+      {
+        "command": "dpa-rex-refacror.detectLargeRenderedLists",
+        "title": "Angular Perf: Detect Large Rendered Lists"
+      },
+      {
+        "command": "dpa-rex-refacror.detectUnsafeToSignal",
+        "title": "Angular Perf: Detect Unsafe toSignal() Usage"
+      },
+      {
+        "command": "dpa-rex-refacror.detectNestedSubscriptions",
+        "title": "Angular Perf: Detect Nested Subscriptions"
+      },
+      {
+        "command": "dpa-rex-refacror.detectEagerlyLoadedRoutes",
+        "title": "Angular Perf: Detect Eagerly Loaded Routes"
       }
     ],
     "configuration": {

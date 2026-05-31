@@ -14,6 +14,7 @@
     <button class="tab-btn" data-tab="planner">Planner</button>
     <button class="tab-btn" data-tab="angular">Angular</button>
     <button class="tab-btn" data-tab="config">Config</button>
+    <button class="tab-btn" data-tab="audit">Audit</button>
     <button id="btn-analyze" class="tab-analyze" title="Analyze active editor selection in Planner (Ctrl+Shift+Alt+R)">Analyze</button>
   </nav>
 
@@ -262,6 +263,125 @@
     </div>
 
   </div><!-- /tab-config -->
+
+  <!-- ── Audit tab ──────────────────────────────────────────────────────────── -->
+  <div id="tab-audit" class="tab-pane hidden">
+
+    <p class="audit-intro">Run Angular performance checks across your workspace. Findings appear below each check and also in the <strong>Problems</strong> panel.</p>
+
+    <button class="audit-run-all" id="btn-audit-all"
+            data-cmd="all"
+            title="Run all 15 checks in sequence">&#9654; Run All Checks</button>
+
+    <div class="audit-group">
+      <div class="audit-group-title">Change Detection</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectDefaultChangeDetection">
+        <span class="audit-label">Detect Default Change Detection</span>
+        <span class="audit-desc">Flags @Component decorators missing ChangeDetectionStrategy.OnPush (skips zoneless apps automatically)</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectDefaultChangeDetection"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectManualChangeDetection">
+        <span class="audit-label">Detect Manual Change Detection Triggers</span>
+        <span class="audit-desc">Flags detectChanges(), ApplicationRef.tick(), and misplaced markForCheck() calls that bypass Angular's reactive update model</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectManualChangeDetection"></div>
+    </div>
+
+    <div class="audit-group">
+      <div class="audit-group-title">RxJS</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectShareReplayLeak">
+        <span class="audit-label">Detect shareReplay() Memory Leaks</span>
+        <span class="audit-desc">Finds shareReplay() calls without refCount: true that hold permanent subscriptions</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectShareReplayLeak"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectNestedSwitchMap">
+        <span class="audit-label">Detect Nested switchMap Chains</span>
+        <span class="audit-desc">Flags switchMap chains 2+ deep that make error handling brittle</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectNestedSwitchMap"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectNestedSubscriptions">
+        <span class="audit-label">Detect Nested Subscriptions</span>
+        <span class="audit-desc">Finds .subscribe() inside another .subscribe() callback — use switchMap, mergeMap, or concatMap instead</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectNestedSubscriptions"></div>
+    </div>
+
+    <div class="audit-group">
+      <div class="audit-group-title">Templates &amp; Lists</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectListTracking">
+        <span class="audit-label">Detect List Tracking Issues</span>
+        <span class="audit-desc">Finds *ngFor without trackBy and @for using track $index on mutable lists</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectListTracking"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectTemplateFunctionCalls">
+        <span class="audit-label">Detect Function Calls in Templates</span>
+        <span class="audit-desc">Flags regular method calls in interpolations and bindings that re-execute on every change-detection cycle (signal accessor calls are suppressed)</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectTemplateFunctionCalls"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectRepeatedExpressions">
+        <span class="audit-label">Detect Repeated Template Expressions</span>
+        <span class="audit-desc">Finds template expressions evaluated 3+ times that could be extracted with @let (Angular 18+)</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectRepeatedExpressions"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectLargeRenderedLists">
+        <span class="audit-label">Detect Large Rendered Lists</span>
+        <span class="audit-desc">Finds large inline arrays and unvirtualised T[] properties iterated in templates without cdk-virtual-scroll-viewport</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectLargeRenderedLists"></div>
+    </div>
+
+    <div class="audit-group">
+      <div class="audit-group-title">Signals</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectHttpInEffect">
+        <span class="audit-label">Detect HTTP Calls Inside effect()</span>
+        <span class="audit-desc">Flags HttpClient calls inside effect() — each signal change triggers a new HTTP request. Use resource() (Angular 19+) instead.</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectHttpInEffect"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectUnsafeToSignal">
+        <span class="audit-label">Detect Unsafe toSignal() Usage</span>
+        <span class="audit-desc">Finds toSignal() calls without initialValue or requireSync that produce Signal&lt;T | undefined&gt; before the first emission</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectUnsafeToSignal"></div>
+    </div>
+
+    <div class="audit-group">
+      <div class="audit-group-title">Bundle Size</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectHeavyImports">
+        <span class="audit-label">Detect Heavy Library Imports</span>
+        <span class="audit-desc">Flags moment, lodash, chart.js, monaco-editor, firebase full-SDK imports with bundle size estimates</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectHeavyImports"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectEagerlyLoadedRoutes">
+        <span class="audit-label">Detect Eagerly Loaded Routes</span>
+        <span class="audit-desc">Finds routes using component: instead of loadComponent:/loadChildren: — these are bundled into the main chunk and loaded on every startup</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectEagerlyLoadedRoutes"></div>
+    </div>
+
+    <div class="audit-group">
+      <div class="audit-group-title">Memory Leaks</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectUnmanagedSubscriptions">
+        <span class="audit-label">Detect Subscriptions Without Cleanup</span>
+        <span class="audit-desc">Finds .subscribe() calls in classes that lack takeUntilDestroyed(), DestroyRef, or manual unsubscribe()</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectUnmanagedSubscriptions"></div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectUnmanagedTimersAndListeners">
+        <span class="audit-label">Detect Unmanaged Timers and Listeners</span>
+        <span class="audit-desc">Flags setInterval() without clearInterval() and window.addEventListener() without removeEventListener()</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectUnmanagedTimersAndListeners"></div>
+    </div>
+
+    <div class="audit-group">
+      <div class="audit-group-title">Images</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectUnoptimizedImages">
+        <span class="audit-label">Detect Images Not Using NgOptimizedImage</span>
+        <span class="audit-desc">Flags &lt;img src=&gt; that should use ngSrc with the NgOptimizedImage directive (Angular 15+)</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectUnoptimizedImages"></div>
+    </div>
+
+  </div><!-- /tab-audit -->
 
   <!-- Floating mark toolbar — fixed position, shown on text selection in sample -->
   <div id="mark-toolbar" class="mark-toolbar hidden">

@@ -1,15 +1,38 @@
 const vscode = acquireVsCodeApi();
 
-// ─── Tab switching ────────────────────────────────────────────────────────────
+// ─── Tab switching + view-state persistence ───────────────────────────────────
+
+let currentActiveTab = 'replace';
+
+function saveViewState() {
+    vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY });
+}
 
 function switchTab(tab) {
+    currentActiveTab = tab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
+    saveViewState();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
+
+// Restore tab + scroll after the script loads — survives sidebar hide/show cycles.
+(function restoreViewState() {
+    const state = vscode.getState();
+    if (!state) { return; }
+    if (state.tab) { switchTab(state.tab); }
+    if (state.scrollY) { requestAnimationFrame(() => window.scrollTo(0, state.scrollY)); }
+})();
+
+// Persist scroll position continuously (debounced).
+let _scrollSaveTimer = null;
+window.addEventListener('scroll', () => {
+    clearTimeout(_scrollSaveTimer);
+    _scrollSaveTimer = setTimeout(saveViewState, 150);
+}, { passive: true });
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -1173,6 +1196,21 @@ window.addEventListener('message', ({ data: msg }) => {
             break;
         }
 
+        case 'auditScanStart': {
+            if (msg.command) { showAuditLoading(msg.command); }
+            break;
+        }
+
+        case 'auditResult': {
+            renderAuditFindings(msg.command, msg.findings ?? []);
+            break;
+        }
+
+        case 'auditFixApplied': {
+            markFindingApplied(msg.uri, msg.findingIndex);
+            break;
+        }
+
         case 'error':
             searchDone();
             showError(msg.message);
@@ -1349,4 +1387,158 @@ $('btn-refresh-angular').addEventListener('click', loadAngularTodos);
 angularListEl.addEventListener('click', e => {
     const item = e.target.closest('.comp-item');
     if (item) { vscode.postMessage({ type: 'openTodoReview', fsPath: item.dataset.path }); }
+});
+
+// ─── Audit tab ────────────────────────────────────────────────────────────────
+
+const AUDIT_COMMANDS = [
+    'dpa-rex-refacror.detectDefaultChangeDetection',
+    'dpa-rex-refacror.detectManualChangeDetection',
+    'dpa-rex-refacror.detectShareReplayLeak',
+    'dpa-rex-refacror.detectNestedSwitchMap',
+    'dpa-rex-refacror.detectNestedSubscriptions',
+    'dpa-rex-refacror.detectListTracking',
+    'dpa-rex-refacror.detectTemplateFunctionCalls',
+    'dpa-rex-refacror.detectRepeatedExpressions',
+    'dpa-rex-refacror.detectLargeRenderedLists',
+    'dpa-rex-refacror.detectHttpInEffect',
+    'dpa-rex-refacror.detectUnsafeToSignal',
+    'dpa-rex-refacror.detectHeavyImports',
+    'dpa-rex-refacror.detectEagerlyLoadedRoutes',
+    'dpa-rex-refacror.detectUnmanagedSubscriptions',
+    'dpa-rex-refacror.detectUnmanagedTimersAndListeners',
+    'dpa-rex-refacror.detectUnoptimizedImages',
+];
+
+/** Returns the results div for a given command, or null. */
+function getAuditResultsDiv(cmd) {
+    return document.querySelector('.audit-results[data-cmd="' + cmd + '"]');
+}
+
+/** Show a loading spinner inside the results div for a command. */
+function showAuditLoading(cmd) {
+    const div = getAuditResultsDiv(cmd);
+    if (!div) { return; }
+    div.classList.remove('hidden');
+    div.innerHTML = '<div class="audit-loading"><span class="spinner"></span> Scanning…</div>';
+}
+
+/** Render the findings array into the results div for a command. */
+function renderAuditFindings(cmd, findings) {
+    const div = getAuditResultsDiv(cmd);
+    if (!div) { return; }
+    div.classList.remove('hidden');
+
+    if (!findings || findings.length === 0) {
+        div.innerHTML = '<p class="audit-ok">No issues found.</p>';
+        return;
+    }
+
+    div.innerHTML = findings.map((f, idx) => {
+        const locText = esc(f.file) + ':' + f.line;
+        const hasFix = f.originalText !== null && f.fixText !== null;
+
+        let diffHtml = '';
+        if (hasFix) {
+            diffHtml =
+                '<div class="finding-diff">' +
+                '<div class="diff-del">- ' + esc(f.originalText) + '</div>' +
+                '<div class="diff-add">+ ' + esc(f.fixText) + '</div>' +
+                '</div>';
+        }
+
+        let actionsHtml = '';
+        if (hasFix) {
+            actionsHtml =
+                '<div class="finding-actions">' +
+                '<button class="finding-apply"' +
+                ' data-uri="' + esc(f.uri) + '"' +
+                ' data-start-line="' + f.line + '"' +
+                ' data-start-col="' + f.col + '"' +
+                ' data-end-line="' + f.endLine + '"' +
+                ' data-end-col="' + f.endCol + '"' +
+                ' data-fix-text="' + esc(f.fixText) + '"' +
+                ' data-index="' + idx + '"' +
+                '>Apply Fix</button>' +
+                '</div>';
+        }
+
+        let suggestionHtml = '';
+        if (f.fixDescription) {
+            suggestionHtml = '<div class="finding-suggestion">Suggestion: ' + esc(f.fixDescription) + '</div>';
+        }
+
+        return '<div class="audit-finding" data-index="' + idx + '">' +
+            '<div class="finding-hdr">' +
+            '<a class="finding-loc" style="cursor:pointer"' +
+            ' data-uri="' + esc(f.uri) + '"' +
+            ' data-line="' + f.line + '"' +
+            '>' + locText + '</a>' +
+            '<span class="finding-code">' + esc(f.code) + '</span>' +
+            '</div>' +
+            '<div class="finding-msg">' + esc(f.message) + '</div>' +
+            diffHtml +
+            actionsHtml +
+            suggestionHtml +
+            '</div>';
+    }).join('');
+
+    // Attach click handlers for location links
+    div.querySelectorAll('.finding-loc').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            vscode.postMessage({
+                type: 'openFile',
+                uri: link.dataset.uri,
+                line: Number(link.dataset.line),
+            });
+        });
+    });
+
+    // Attach click handlers for Apply Fix buttons
+    div.querySelectorAll('.finding-apply').forEach(btn => {
+        btn.addEventListener('click', () => {
+            vscode.postMessage({
+                type: 'applyAuditFix',
+                uri: btn.dataset.uri,
+                startLine: Number(btn.dataset.startLine),
+                startCol: Number(btn.dataset.startCol),
+                endLine: Number(btn.dataset.endLine),
+                endCol: Number(btn.dataset.endCol),
+                fixText: btn.dataset.fixText,
+                findingIndex: Number(btn.dataset.index),
+            });
+        });
+    });
+}
+
+/** Grey out a finding after its fix has been applied. */
+function markFindingApplied(uri, findingIndex) {
+    // Search all results divs for the finding with matching index
+    document.querySelectorAll('.audit-results').forEach(resultsDiv => {
+        const finding = resultsDiv.querySelector('.audit-finding[data-index="' + findingIndex + '"]');
+        if (!finding) { return; }
+        // Verify the uri matches by checking the location link
+        const loc = finding.querySelector('.finding-loc');
+        if (loc && loc.dataset.uri === uri) {
+            finding.classList.add('finding-applied');
+            const applyBtn = finding.querySelector('.finding-apply');
+            if (applyBtn) { applyBtn.disabled = true; }
+        }
+    });
+}
+
+document.querySelectorAll('.audit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const cmd = btn.dataset.cmd;
+        if (cmd) {
+            showAuditLoading(cmd);
+            vscode.postMessage({ type: 'runAudit', command: cmd });
+        }
+    });
+});
+
+$('btn-audit-all').addEventListener('click', () => {
+    AUDIT_COMMANDS.forEach(cmd => showAuditLoading(cmd));
+    vscode.postMessage({ type: 'runAuditAll', commands: AUDIT_COMMANDS });
 });
