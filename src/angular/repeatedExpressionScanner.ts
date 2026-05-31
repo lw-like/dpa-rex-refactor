@@ -184,14 +184,16 @@ export async function scanRepeatedTemplateExpressions(
                 uri: uri.toString(),
                 file: vscode.workspace.asRelativePath(uri),
                 line: firstLine + 1,
-                col: firstCol,
+                col: 0,
                 endLine: firstLine + 1,
-                endCol,
+                endCol: 0,   // zero-width range = insert before the line
                 message: msg,
                 code: 'B2',
-                originalText: null,
-                fixText: null,
-                fixDescription: `@let ${derivedName} = ${expr}; — place near first use, then replace all occurrences with ${derivedName}`,
+                // Empty string (not null) = zero-width insert. Only when @let is available (Angular 18+).
+                originalText: atLetAvailable ? '' : null,
+                fixText:      atLetAvailable ? `@let ${derivedName} = ${expr};\n` : null,
+                fixDescription: `@let ${derivedName} = ${expr}; — inserted before first use. ` +
+                    `Then replace all ${count} occurrences of '${expr}' in this template with '${derivedName}'.`,
             });
         }
 

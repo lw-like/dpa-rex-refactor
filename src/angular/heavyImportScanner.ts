@@ -23,16 +23,24 @@ const HEAVY_LIBS: HeavyLib[] = [
 
 const H1_FIX_DESCRIPTIONS: Record<string, string> = {
     'moment':
-        "Replace moment (~300 KB) with date-fns:\n" +
-        "  npm install date-fns\n" +
-        "  // Before: import moment from 'moment'; moment(date).format('YYYY-MM-DD')\n" +
-        "  // After:  import { format } from 'date-fns'; format(date, 'yyyy-MM-dd')\n" +
-        "  Or Day.js (moment-compatible API): npm install dayjs; import dayjs from 'dayjs'",
+        "Moment is 300 KB with no tree-shaking. Swapping only the import source is NOT enough — the API must change too.\n" +
+        "  Step 1: choose a replacement:\n" +
+        "    date-fns — fully tree-shakeable, functional API, different token casing (yyyy not YYYY)\n" +
+        "    Day.js   — moment-like API (~2 KB core), but advanced features need separate plugins\n" +
+        "  Step 2: npm install date-fns  OR  npm install dayjs\n" +
+        "  Step 3: replace every moment() call — the APIs are NOT identical:\n" +
+        "    date-fns: import { format } from 'date-fns';  format(date, 'yyyy-MM-dd')\n" +
+        "    Day.js:   import dayjs from 'dayjs';          dayjs(date).format('YYYY-MM-DD')\n" +
+        "  Step 4 (Day.js only): duration/utc/locale require plugins — verify before switching",
     'lodash (full)':
-        "Replace lodash barrel (~70 KB) with tree-shakeable lodash-es:\n" +
-        "  npm install lodash-es @types/lodash-es\n" +
-        "  // Before: import _ from 'lodash'; _.cloneDeep(obj)\n" +
-        "  // After:  import { cloneDeep } from 'lodash-es'; cloneDeep(obj)",
+        "Changing only the package name (lodash → lodash-es) with a default import saves nothing — the full barrel is still bundled.\n" +
+        "  The correct migration has three steps:\n" +
+        "  Step 1: npm install lodash-es @types/lodash-es\n" +
+        "  Step 2: identify every lodash function used in this file (_.cloneDeep, _.merge, _.debounce, …)\n" +
+        "  Step 3: replace the barrel import with individual named imports:\n" +
+        "    Before: import _ from 'lodash';           _.cloneDeep(obj)\n" +
+        "    After:  import { cloneDeep } from 'lodash-es';  cloneDeep(obj)\n" +
+        "  Only the functions you explicitly import will be included in the bundle",
     'chart.js':
         "Lazy-load chart.js to keep it out of the main bundle:\n" +
         "  async showChart() {\n" +

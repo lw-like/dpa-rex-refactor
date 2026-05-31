@@ -30,6 +30,13 @@ import { scanUnsafeToSignal } from '../angular/unsafeToSignalScanner';
 import { scanNestedSubscriptions } from '../angular/nestedSubscriptionScanner';
 import { scanEagerRoutes } from '../angular/eagerRouteScanner';
 import { scanMutabilityIssues } from '../angular/mutabilityScanner';
+import {
+    runFormsAnalysis,
+    buildFormsPreview,
+    applyFormsMigration,
+} from '../angular/forms/formsMigrationCommand';
+import { FormDetection } from '../angular/forms/formIR';
+import { runConvertToSignal, runConvertInputsOutputs } from '../angular/signalConverter';
 
 export interface WebviewMessage {
     type: string;
@@ -64,6 +71,8 @@ export interface WebviewMessage {
     auditCode?: string;
     // Audit scope (distinct from replace-engine scope which is a string)
     auditScopeData?: { type: 'workspace' | 'folder' | 'files'; uriString?: string; uriStrings?: string[] };
+    // Forms migration
+    formsDetection?: FormDetection;
 }
 
 export class MessageHandler {
@@ -634,6 +643,20 @@ export class MessageHandler {
                         }
                     }
 
+                    // B1: ensure computed is imported when adding a computed() field
+                    if (msg.auditCode === 'B1') {
+                        const text = doc.getText();
+                        if (!/\bcomputed\b/.test(text)) {
+                            const coreImport = /import\s*\{([^}]+)\}\s*from\s*['"]@angular\/core['"]/m.exec(text);
+                            if (coreImport) {
+                                const closingBrace = text.indexOf('}', coreImport.index + coreImport[0].indexOf('{'));
+                                edit.insert(uri, doc.positionAt(closingBrace), ', computed');
+                            } else {
+                                edit.insert(uri, new vscode.Position(0, 0), "import { computed } from '@angular/core';\n");
+                            }
+                        }
+                    }
+
                     const success = await vscode.workspace.applyEdit(edit);
                     if (success) {
                         this.post({ type: 'auditFixApplied', uri: msg.uri, findingIndex: msg.findingIndex });
@@ -643,6 +666,33 @@ export class MessageHandler {
                 } catch (e: unknown) {
                     this.postError(`Apply fix failed: ${e instanceof Error ? e.message : String(e)}`);
                 }
+                break;
+            }
+
+            case 'runFormsAnalysis': {
+                await runFormsAnalysis(msg => this.post(msg));
+                break;
+            }
+
+            case 'buildFormsPreview': {
+                if (!msg.formsDetection) { break; }
+                await buildFormsPreview(msg.formsDetection, msg => this.post(msg));
+                break;
+            }
+
+            case 'applyFormsMigration': {
+                if (!msg.formsDetection) { break; }
+                await applyFormsMigration(msg.formsDetection, msg => this.post(msg));
+                break;
+            }
+
+            case 'convertSelectionToSignal': {
+                await runConvertToSignal(msg => this.post(msg));
+                break;
+            }
+
+            case 'convertInputsOutputs': {
+                await runConvertInputsOutputs(msg => this.post(msg));
                 break;
             }
 

@@ -79,8 +79,8 @@ export async function scanMutabilityIssues(
                     endCol:       issue.endCol,
                     message:      issue.message,
                     code:         'M1',
-                    originalText: null,
-                    fixText:      null,
+                    originalText: issue.originalText ?? null,
+                    fixText:      issue.fixText ?? null,
                     fixDescription: buildFixDescription(issue.message, lineText),
                 });
             }

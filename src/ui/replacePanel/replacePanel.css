@@ -1077,6 +1077,17 @@ mark {
 .angular-list { display: flex; flex-direction: column; gap: 8px; }
 .angular-empty { color: var(--vscode-descriptionForeground); font-style: italic; font-size: 0.88em; }
 
+.section-divider { border: none; border-top: 1px solid var(--vscode-widget-border); margin: 16px 0; }
+
+.convert-section { margin-bottom: 4px; }
+.convert-section-hdr h3 { font-size: 0.97em; font-weight: 600; margin-bottom: 4px; }
+.convert-section-hint { font-size: 0.82em; color: var(--vscode-descriptionForeground); display: block; margin-bottom: 8px; }
+.convert-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.convert-result { margin-top: 6px; padding: 8px 10px; border-radius: 4px; font-size: 0.85em; line-height: 1.5; }
+.convert-result.success { background: rgba(40,167,80,0.12); border: 1px solid rgba(40,167,80,0.3); }
+.convert-result.error   { background: rgba(220,53,69,0.12);  border: 1px solid rgba(220,53,69,0.3); }
+.convert-result pre { white-space: pre-wrap; word-break: break-all; margin-top: 4px; font-size: 0.88em; }
+
 .comp-item {
   border: 1px solid var(--vscode-panel-border, #454545);
   border-radius: 3px;
@@ -1206,6 +1217,207 @@ mark {
 }
 
 .audit-scope-clear:hover { color: var(--vscode-foreground); }
+
+/* ── Forms tab ───────────────────────────────────────────────────────────── */
+
+.forms-warning {
+  font-size: 0.8em;
+  background: rgba(255, 165, 0, 0.12);
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  border-radius: 3px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.forms-component-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+.forms-component-label {
+  font-size: 0.84em;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-descriptionForeground);
+}
+
+.forms-summary {
+  font-size: 0.84em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 8px;
+}
+
+.forms-empty {
+  font-size: 0.84em;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* ── Detection card ──────────────────────────────────────────────────────── */
+
+.forms-card {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.forms-card.forms-migrated {
+  opacity: 0.55;
+}
+
+.forms-card-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 4px;
+}
+
+.forms-var-name {
+  font-weight: 600;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+}
+
+.forms-warn-badge {
+  font-size: 0.72em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 165, 0, 0.18);
+  border: 1px solid rgba(255, 165, 0, 0.5);
+}
+
+.forms-ok-badge {
+  font-size: 0.72em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(40, 167, 80, 0.15);
+  border: 1px solid rgba(40, 167, 80, 0.4);
+  color: var(--vscode-testing-iconPassed, #3fb950);
+}
+
+.forms-card-meta {
+  font-size: 0.78em;
+  color: var(--vscode-descriptionForeground);
+  padding: 0 10px 8px;
+}
+
+.forms-card-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+/* ── Preview panel ───────────────────────────────────────────────────────── */
+
+.forms-preview-area {
+  border-top: 1px solid var(--vscode-panel-border);
+  padding: 10px;
+}
+
+.forms-preview-panel {
+  display: flex;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.forms-preview-col {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.forms-preview-label {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+
+.forms-preview-code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.78em;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  padding: 8px;
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.forms-diagnostics {
+  margin-top: 8px;
+}
+
+.forms-diag {
+  font-size: 0.78em;
+  color: var(--vscode-editorWarning-foreground, orange);
+  padding: 2px 0;
+  line-height: 1.4;
+}
+
+.forms-apply-error {
+  font-size: 0.78em;
+  color: var(--vscode-editorError-foreground, #f44);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ── Audit path filter ───────────────────────────────────────────────────── */
+.audit-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.audit-filter-bar input[type="text"] {
+  flex: 1;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 2px;
+  padding: 3px 6px;
+  font-size: 0.82em;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.audit-filter-bar input[type="text"]:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  border-color: var(--vscode-focusBorder);
+}
+
+.audit-filter-exclude-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.82em;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.audit-filter-clear-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: 1em;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.audit-filter-clear-btn:hover { color: var(--vscode-foreground); }
 
 .audit-intro {
   font-size: 0.84em;
@@ -1406,6 +1618,8 @@ mark {
   color: var(--vscode-descriptionForeground);
   font-style: italic;
   line-height: 1.4;
+  white-space: pre-wrap;
+  font-family: var(--vscode-editor-font-family, monospace);
 }
 
 .finding-actions {
