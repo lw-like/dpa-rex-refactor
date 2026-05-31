@@ -269,6 +269,19 @@
 
     <p class="audit-intro">Run Angular performance checks across your workspace. Findings appear below each check and also in the <strong>Problems</strong> panel.</p>
 
+    <div class="audit-scope-bar">
+      <span class="audit-scope-label">Scope</span>
+      <div class="audit-scope-btns">
+        <button class="audit-scope-opt active" id="btn-scope-workspace">Workspace</button>
+        <button class="audit-scope-opt" id="btn-scope-folder">&#128193; Folder&hellip;</button>
+        <button class="audit-scope-opt" id="btn-scope-files">&#128196; Files&hellip;</button>
+      </div>
+      <div id="audit-scope-display" class="audit-scope-display hidden">
+        <span id="audit-scope-path" class="audit-scope-path"></span>
+        <button id="btn-scope-clear" class="audit-scope-clear" title="Reset to workspace">&#215;</button>
+      </div>
+    </div>
+
     <button class="audit-run-all" id="btn-audit-all"
             data-cmd="all"
             title="Run all 15 checks in sequence">&#9654; Run All Checks</button>

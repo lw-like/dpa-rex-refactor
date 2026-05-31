@@ -5,7 +5,7 @@ const vscode = acquireVsCodeApi();
 let currentActiveTab = 'replace';
 
 function saveViewState() {
-    vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY });
+    vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY, auditScope });
 }
 
 function switchTab(tab) {
@@ -25,6 +25,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (!state) { return; }
     if (state.tab) { switchTab(state.tab); }
     if (state.scrollY) { requestAnimationFrame(() => window.scrollTo(0, state.scrollY)); }
+    if (state.auditScope) { auditScope = state.auditScope; updateScopeDisplay(); }
 })();
 
 // Persist scroll position continuously (debounced).
@@ -1196,6 +1197,16 @@ window.addEventListener('message', ({ data: msg }) => {
             break;
         }
 
+        case 'auditScopeSelected': {
+            if (msg.scopeType === 'folder' && msg.uriString) {
+                auditScope = { type: 'folder', uriString: msg.uriString, label: msg.label };
+            } else if (msg.scopeType === 'files' && msg.uriStrings) {
+                auditScope = { type: 'files', uriStrings: msg.uriStrings, label: msg.label };
+            }
+            updateScopeDisplay();
+            break;
+        }
+
         case 'auditScanStart': {
             if (msg.command) { showAuditLoading(msg.command); }
             break;
@@ -1389,6 +1400,44 @@ angularListEl.addEventListener('click', e => {
     if (item) { vscode.postMessage({ type: 'openTodoReview', fsPath: item.dataset.path }); }
 });
 
+// ─── Audit tab — scope selector ───────────────────────────────────────────────
+
+// { type: 'workspace' | 'folder' | 'files', uriString?, uriStrings?, label? }
+let auditScope = { type: 'workspace' };
+
+function updateScopeDisplay() {
+    const isWorkspace = auditScope.type === 'workspace';
+    $('btn-scope-workspace').classList.toggle('active', isWorkspace);
+    $('btn-scope-folder').classList.toggle('active', auditScope.type === 'folder');
+    $('btn-scope-files').classList.toggle('active', auditScope.type === 'files');
+    const display = $('audit-scope-display');
+    if (isWorkspace) {
+        display.classList.add('hidden');
+    } else {
+        display.classList.remove('hidden');
+        $('audit-scope-path').textContent = auditScope.label || auditScope.uriString || '';
+    }
+    saveViewState(); // persist scope alongside tab + scroll
+}
+
+$('btn-scope-workspace').addEventListener('click', () => {
+    auditScope = { type: 'workspace' };
+    updateScopeDisplay();
+});
+
+$('btn-scope-folder').addEventListener('click', () => {
+    vscode.postMessage({ type: 'selectAuditFolder' });
+});
+
+$('btn-scope-files').addEventListener('click', () => {
+    vscode.postMessage({ type: 'selectAuditFiles' });
+});
+
+$('btn-scope-clear').addEventListener('click', () => {
+    auditScope = { type: 'workspace' };
+    updateScopeDisplay();
+});
+
 // ─── Audit tab ────────────────────────────────────────────────────────────────
 
 const AUDIT_COMMANDS = [
@@ -1533,12 +1582,12 @@ document.querySelectorAll('.audit-btn').forEach(btn => {
         const cmd = btn.dataset.cmd;
         if (cmd) {
             showAuditLoading(cmd);
-            vscode.postMessage({ type: 'runAudit', command: cmd });
+            vscode.postMessage({ type: 'runAudit', command: cmd, auditScopeData: auditScope });
         }
     });
 });
 
 $('btn-audit-all').addEventListener('click', () => {
     AUDIT_COMMANDS.forEach(cmd => showAuditLoading(cmd));
-    vscode.postMessage({ type: 'runAuditAll', commands: AUDIT_COMMANDS });
+    vscode.postMessage({ type: 'runAuditAll', commands: AUDIT_COMMANDS, auditScopeData: auditScope });
 });
