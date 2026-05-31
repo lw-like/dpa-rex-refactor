@@ -12,6 +12,18 @@ export interface MutabilityIssue {
     endCol: number;     // 0-based column end
     message: string;
     severity: 'high' | 'medium';
+    originalText?: string;  // set when an auto-fix is possible (single-line calls only)
+    fixText?: string;
+}
+
+/** Finds the matching closing ')' for the '(' at openPos on the same line. Returns -1 if not found. */
+function findMatchingParen(line: string, openPos: number): number {
+    let depth = 0;
+    for (let i = openPos; i < line.length; i++) {
+        if (line[i] === '(') { depth++; }
+        else if (line[i] === ')') { depth--; if (depth === 0) { return i; } }
+    }
+    return -1;
 }
 
 // Infrastructure fields that should not be flagged as mutation targets.
@@ -137,12 +149,42 @@ export function detectMutabilityIssues(
             const [, field, method] = m;
             if (skip(field)) { continue; }
             const isInput = inputFields.has(field);
+
+            // Auto-fix for push / sort / reverse when the full call is on one line
+            const openParen  = m.index + m[0].length - 1;
+            const closeParen = findMatchingParen(line, openParen);
+            const singleLine = closeParen >= 0;
+
+            let autoOrig: string | undefined;
+            let autoFix:  string | undefined;
+
+            if (singleLine) {
+                const argText  = line.slice(openParen + 1, closeParen);
+                const fullCall = line.slice(m.index, closeParen + 1);
+                if (method === 'push') {
+                    autoOrig = fullCall;
+                    autoFix  = `this.${field} = [...this.${field}, ${argText}]`;
+                } else if (method === 'sort') {
+                    const arg = argText.trim() ? `(${argText})` : '()';
+                    autoOrig = fullCall;
+                    autoFix  = `this.${field} = [...this.${field}].sort${arg}`;
+                } else if (method === 'reverse') {
+                    autoOrig = fullCall;
+                    autoFix  = `this.${field} = [...this.${field}].reverse()`;
+                }
+                // splice / shift / unshift / fill — guidance only
+            }
+
             issues.push({
-                lineIdx: i, col: m.index, endCol: m.index + m[0].length,
+                lineIdx: i,
+                col: m.index,
+                endCol: singleLine && autoOrig ? closeParen + 1 : m.index + m[0].length,
                 message: isInput
                     ? `@Input '${field}'.${method}() mutates an input array — parent reference unchanged, view stays stale under OnPush`
                     : `this.${field}.${method}() mutates array in place — use spread ([...this.${field}, item]) or assign a new array`,
                 severity: isInput ? 'high' : 'medium',
+                originalText: autoOrig,
+                fixText:      autoFix,
             });
         }
 

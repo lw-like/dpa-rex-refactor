@@ -10,9 +10,12 @@ const $ = id => document.getElementById(id);
 // URI of the file currently open in the VS Code editor (pushed by the extension).
 // Used to switch "Go to issue" ↔ "Apply Fix" buttons live.
 let currentEditorUri = '';
+// Audit path filter state
+let auditFilterPattern = '';
+let auditFilterExclude = false;
 
 function saveViewState() {
-    vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY, auditScope });
+    vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY, auditScope, auditFilterPattern, auditFilterExclude });
 }
 
 // switchTab only updates the DOM — it never writes state.
@@ -34,6 +37,13 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (state.tab) { switchTab(state.tab); }
     if (state.scrollY) { requestAnimationFrame(() => window.scrollTo(0, state.scrollY)); }
     if (state.auditScope) { auditScope = state.auditScope; updateScopeDisplay(); }
+    if (state.auditFilterPattern) {
+        auditFilterPattern = state.auditFilterPattern;
+        auditFilterExclude = !!state.auditFilterExclude;
+        $('audit-filter-input').value = auditFilterPattern;
+        $('audit-filter-exclude').checked = auditFilterExclude;
+        $('audit-filter-clear').classList.toggle('hidden', !auditFilterPattern);
+    }
 })();
 
 // Persist scroll position continuously (debounced).
@@ -1206,6 +1216,92 @@ window.addEventListener('message', ({ data: msg }) => {
         case 'editorContext': {
             currentEditorUri = msg.uri || '';
             updateFindingButtons();
+            updateFormsComponentBar(msg.uri || '');
+            break;
+        }
+
+        case 'formsAnalysisResult': {
+            $('forms-loading').classList.add('hidden');
+            if (msg.error) {
+                $('forms-summary').textContent = 'Error: ' + msg.error;
+                $('forms-list').innerHTML = '';
+                break;
+            }
+            formsDetections = msg.detections ?? [];
+            const count = formsDetections.length;
+            $('forms-summary').textContent = count > 0
+                ? `Found ${count} reactive form${count !== 1 ? 's' : ''} in ${esc(msg.componentName)}`
+                : `No reactive forms found in ${esc(msg.componentName)}`;
+            renderFormsDetections(formsDetections);
+            break;
+        }
+
+        case 'formsPreviewResult': {
+            renderFormsPreview(msg.preview);
+            break;
+        }
+
+        case 'formsPreviewError': {
+            $('forms-summary').textContent = 'Preview error: ' + (msg.error || 'unknown');
+            break;
+        }
+
+        case 'formsApplyResult': {
+            const applied = $('forms-list').querySelectorAll('.forms-card');
+            applied.forEach(card => {
+                const varEl = card.querySelector('.forms-var-name');
+                if (varEl && varEl.textContent === msg.variableName) {
+                    card.classList.add('forms-migrated');
+                    const applyBtn = card.querySelector('.forms-apply-btn');
+                    if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = '&#10003; Migrated'; }
+                }
+            });
+            break;
+        }
+
+        case 'formsApplyError': {
+            // Show error prominently on every card's action area + in the summary
+            const errText = msg.error || 'Unknown error';
+            $('forms-summary').textContent = 'Migration error: ' + errText;
+            // Also show inline below every Apply button so it's hard to miss
+            $('forms-list').querySelectorAll('.forms-card-actions').forEach(actions => {
+                let errEl = actions.querySelector('.forms-apply-error');
+                if (!errEl) {
+                    errEl = document.createElement('div');
+                    errEl.className = 'forms-apply-error';
+                    actions.appendChild(errEl);
+                }
+                errEl.textContent = '⚠ ' + errText;
+            });
+            break;
+        }
+
+        case 'convertSignalResult': {
+            const r = msg.result;
+            const diags = r.diagnostics?.length
+                ? `<pre>${r.diagnostics.join('\n')}</pre>` : '';
+            showConvertResult('convert-signal-result', 'success',
+                `<strong>${r.varName}</strong> converted to signal.<br>` +
+                `TS changes: ${r.tsChanges} &nbsp;|&nbsp; HTML changes: ${r.htmlChanges}` +
+                diags);
+            break;
+        }
+        case 'convertSignalError': {
+            showConvertResult('convert-signal-result', 'error', msg.error);
+            break;
+        }
+        case 'convertIOResult': {
+            const r = msg.result;
+            const ins  = r.inputsConverted?.length  ? `<div>@Input  → input():  <strong>${r.inputsConverted.join(', ')}</strong></div>`  : '';
+            const outs = r.outputsConverted?.length ? `<div>@Output → output(): <strong>${r.outputsConverted.join(', ')}</strong></div>` : '';
+            const msg2 = r.message ? `<div>${r.message}</div>` : '';
+            const diags = r.diagnostics?.length ? `<pre>${r.diagnostics.join('\n')}</pre>` : '';
+            showConvertResult('convert-io-result', r.inputsConverted?.length || r.outputsConverted?.length ? 'success' : '',
+                (ins + outs + msg2 + diags) || 'Done.');
+            break;
+        }
+        case 'convertIOError': {
+            showConvertResult('convert-io-result', 'error', msg.error);
             break;
         }
 
@@ -1413,6 +1509,25 @@ angularListEl.addEventListener('click', e => {
     if (item) { vscode.postMessage({ type: 'openTodoReview', fsPath: item.dataset.path }); }
 });
 
+// ─── Angular tab — Convert to Signal ─────────────────────────────────────────
+
+function showConvertResult(elId, cls, html) {
+    const el = $(elId);
+    el.className = `convert-result ${cls}`;
+    el.innerHTML = html;
+    el.classList.remove('hidden');
+}
+
+$('btn-convert-signal').addEventListener('click', () => {
+    showConvertResult('convert-signal-result', '', '<em>Converting…</em>');
+    vscode.postMessage({ type: 'convertSelectionToSignal' });
+});
+
+$('btn-convert-io').addEventListener('click', () => {
+    showConvertResult('convert-io-result', '', '<em>Converting…</em>');
+    vscode.postMessage({ type: 'convertInputsOutputs' });
+});
+
 // ─── Audit — common action component ─────────────────────────────────────────
 //
 // Every finding that has an auto-fix renders two mutually exclusive buttons:
@@ -1486,6 +1601,74 @@ function updateScopeDisplay() {
         $('audit-scope-path').textContent = auditScope.label || auditScope.uriString || '';
     }
 }
+
+/**
+ * Filters all rendered audit findings by file path.
+ * Pass a specific results div to restrict to that section, or omit to apply
+ * across every visible results div (e.g. when filter settings change).
+ */
+function applyAuditFilter(targetDiv) {
+    const pattern = auditFilterPattern.toLowerCase().trim();
+    const divs = targetDiv
+        ? [targetDiv]
+        : Array.from(document.querySelectorAll('.audit-results:not(.hidden)'));
+
+    divs.forEach(resultsDiv => {
+        const findings = resultsDiv.querySelectorAll('.audit-finding');
+        if (!findings.length) { return; }
+
+        let visible = 0;
+        findings.forEach(finding => {
+            const filePath = (finding.dataset.file || '').toLowerCase();
+            const matches = !pattern || filePath.includes(pattern);
+            const show = auditFilterExclude ? !matches : matches;
+            finding.style.display = show ? '' : 'none';
+            if (show) { visible++; }
+        });
+
+        // Update the count badge in the results header
+        const countEl = resultsDiv.querySelector('.audit-results-count');
+        if (countEl) {
+            const total = findings.length;
+            if (!pattern || total === 0) {
+                // No active filter — restore natural text
+                if (total === 0) {
+                    countEl.innerHTML = '<span class="audit-ok-inline">&#10003;&nbsp;No issues</span>';
+                } else {
+                    countEl.textContent = total + ' issue' + (total !== 1 ? 's' : '');
+                }
+            } else {
+                countEl.textContent = visible + ' / ' + total + ' issue' + (total !== 1 ? 's' : '');
+            }
+        }
+    });
+
+    $('audit-filter-clear').classList.toggle('hidden', !pattern);
+}
+
+// Filter input — apply on every keystroke
+$('audit-filter-input').addEventListener('input', e => {
+    auditFilterPattern = e.target.value;
+    saveViewState();
+    applyAuditFilter();
+});
+
+// Exclude checkbox
+$('audit-filter-exclude').addEventListener('change', e => {
+    auditFilterExclude = e.target.checked;
+    saveViewState();
+    applyAuditFilter();
+});
+
+// Clear button
+$('audit-filter-clear').addEventListener('click', () => {
+    auditFilterPattern = '';
+    auditFilterExclude = false;
+    $('audit-filter-input').value = '';
+    $('audit-filter-exclude').checked = false;
+    saveViewState();
+    applyAuditFilter();
+});
 
 $('btn-scope-workspace').addEventListener('click', () => {
     auditScope = { type: 'workspace' };
@@ -1584,7 +1767,7 @@ function renderAuditFindings(cmd, findings) {
                 ? '<div class="finding-suggestion">Suggestion: ' + esc(f.fixDescription) + '</div>'
                 : '';
 
-            return '<div class="audit-finding" data-index="' + idx + '">' +
+            return '<div class="audit-finding" data-index="' + idx + '" data-file="' + esc(f.file) + '">' +
                 '<div class="finding-hdr">' +
                 '<a class="finding-loc" style="cursor:pointer"' +
                 ' data-uri="' + esc(f.uri) + '"' +
@@ -1628,6 +1811,9 @@ function renderAuditFindings(cmd, findings) {
         });
     });
 
+    // Re-apply the active path filter to the newly rendered findings
+    applyAuditFilter(div);
+
     // "Apply Fix"
     div.querySelectorAll('.finding-apply').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1660,6 +1846,121 @@ function markFindingApplied(uri, findingIndex) {
             if (applyBtn) { applyBtn.disabled = true; }
         }
     });
+}
+
+// ─── Forms tab ────────────────────────────────────────────────────────────────
+
+/** Latest analysis detections — kept in memory for Preview / Apply actions. */
+let formsDetections = [];
+
+$('btn-forms-analyze').addEventListener('click', () => {
+    $('forms-loading').classList.remove('hidden');
+    $('forms-list').innerHTML = '';
+    $('forms-summary').textContent = '';
+    vscode.postMessage({ type: 'runFormsAnalysis' });
+});
+
+// Update the component name bar when the active editor changes
+function updateFormsComponentBar(uri) {
+    const nameEl = $('forms-component-name');
+    if (!uri) { nameEl.textContent = 'Open a .ts or .html component file'; return; }
+    // Extract a friendly name from the URI
+    const parts = uri.split(/[/\\]/);
+    const file = parts[parts.length - 1] ?? '';
+    nameEl.textContent = file.replace(/\.(ts|html)$/, '');
+}
+
+function renderFormsDetections(detections) {
+    const list = $('forms-list');
+    if (!detections || detections.length === 0) {
+        list.innerHTML = '<p class="forms-empty">No reactive forms detected in this component.</p>';
+        return;
+    }
+    list.innerHTML = detections.map((det, idx) => {
+        const warnCount = det.diagnostics.length;
+        const badge = warnCount > 0
+            ? `<span class="forms-warn-badge">&#9888; ${warnCount} warning${warnCount !== 1 ? 's' : ''}</span>`
+            : '<span class="forms-ok-badge">&#10003; ready</span>';
+        return `<div class="forms-card" data-idx="${idx}">` +
+            `<div class="forms-card-hdr">` +
+            `<span class="forms-var-name">${esc(det.variableName)}</span>` +
+            badge +
+            `</div>` +
+            `<div class="forms-card-meta">${esc(det.componentName)} — line ${det.declarationLine}</div>` +
+            `<div class="forms-card-actions">` +
+            `<button class="forms-preview-btn sec" data-idx="${idx}">Preview Migration</button>` +
+            `<button class="forms-apply-btn" data-idx="${idx}">Apply Migration</button>` +
+            `</div>` +
+            `<div class="forms-preview-area hidden" data-idx="${idx}"></div>` +
+            `</div>`;
+    }).join('');
+
+    list.querySelectorAll('.forms-preview-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.idx);
+            const det = formsDetections[idx];
+            if (!det) { return; }
+            btn.textContent = 'Loading…';
+            btn.disabled = true;
+            vscode.postMessage({ type: 'buildFormsPreview', formsDetection: det });
+        });
+    });
+
+    list.querySelectorAll('.forms-apply-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.idx);
+            const det = formsDetections[idx];
+            if (!det) { return; }
+            vscode.postMessage({ type: 'applyFormsMigration', formsDetection: det });
+        });
+    });
+}
+
+function renderFormsPreview(preview) {
+    // Find the card that corresponds to this variableName
+    const card = $('forms-list').querySelector(`.forms-card[data-idx]`);
+    // Find by matching variable name across all cards
+    const allCards = $('forms-list').querySelectorAll('.forms-card');
+    let targetArea = null;
+    let targetIdx = -1;
+    allCards.forEach(c => {
+        const varEl = c.querySelector('.forms-var-name');
+        if (varEl && varEl.textContent === preview.variableName) {
+            targetArea = c.querySelector('.forms-preview-area');
+            targetIdx = Number(c.dataset.idx);
+        }
+    });
+    if (!targetArea) { return; }
+
+    // Reset preview button
+    const previewBtn = $('forms-list').querySelector(`.forms-preview-btn[data-idx="${targetIdx}"]`);
+    if (previewBtn) { previewBtn.textContent = 'Preview Migration'; previewBtn.disabled = false; }
+
+    const hasDiags = preview.diagnostics && preview.diagnostics.length > 0;
+    const diagHtml = hasDiags
+        ? '<div class="forms-diagnostics">' +
+          preview.diagnostics.map(d => `<div class="forms-diag">&#9888; ${esc(d)}</div>`).join('') +
+          '</div>'
+        : '';
+
+    const htmlCol = preview.htmlPreview
+        ? `<div class="forms-preview-col">` +
+          `<div class="forms-preview-label">Generated HTML</div>` +
+          `<pre class="forms-preview-code">${esc(preview.htmlPreview)}</pre>` +
+          `</div>`
+        : '';
+
+    targetArea.innerHTML =
+        `<div class="forms-preview-panel">` +
+        `<div class="forms-preview-col">` +
+        `<div class="forms-preview-label">Generated TypeScript</div>` +
+        `<pre class="forms-preview-code">${esc(preview.tsPreview)}</pre>` +
+        `</div>` +
+        htmlCol +
+        `</div>` +
+        diagHtml;
+
+    targetArea.classList.remove('hidden');
 }
 
 document.querySelectorAll('.audit-btn').forEach(btn => {

@@ -6,8 +6,12 @@
   "version": "0.1.0",
   "publisher": "dpa-rex-refacror",
   "license": "AGPL-3.0-only",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Other"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
   "repository": "https://github.com/lw-like/dpa-rex-refactor",
   "activationEvents": [
     "onCommand:dpa-rex-refacror.openPanel",
@@ -139,7 +143,12 @@
       "properties": {
         "dpa-rex-refacror.defaultScope": {
           "type": "string",
-          "enum": ["currentFile", "openFiles", "workspaceFolder", "glob"],
+          "enum": [
+            "currentFile",
+            "openFiles",
+            "workspaceFolder",
+            "glob"
+          ],
           "default": "workspaceFolder",
           "description": "Default scope for bulk replace operations."
         },
@@ -191,9 +200,17 @@
     ],
     "menus": {
       "commandPalette": [
-        { "command": "dpa-rex-refacror.openPanel" },
-        { "command": "dpa-rex-refacror.analyzeSelection", "when": "editorHasSelection" },
-        { "command": "dpa-rex-refacror.extractAngularComponent", "when": "editorHasSelection" }
+        {
+          "command": "dpa-rex-refacror.openPanel"
+        },
+        {
+          "command": "dpa-rex-refacror.analyzeSelection",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "dpa-rex-refacror.extractAngularComponent",
+          "when": "editorHasSelection"
+        }
       ],
       "editor/context": [
         {
@@ -232,5 +249,8 @@
     "glob": "^10.3.10",
     "mocha": "^10.3.0",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "ts-morph": "^28.0.0"
   }
 }

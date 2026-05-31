@@ -15,6 +15,7 @@
     <button class="tab-btn" data-tab="angular">Angular</button>
     <button class="tab-btn" data-tab="config">Config</button>
     <button class="tab-btn" data-tab="audit">Audit</button>
+    <button class="tab-btn" data-tab="forms">Forms</button>
     <button id="btn-analyze" class="tab-analyze" title="Analyze active editor selection in Planner (Ctrl+Shift+Alt+R)">Analyze</button>
   </nav>
 
@@ -224,6 +225,8 @@
 
   <!-- ── Angular tab ────────────────────────────────────────────────────── -->
   <div id="tab-angular" class="tab-pane hidden">
+
+    <!-- Extracted components section -->
     <div class="angular-hdr">
       <h2>Extracted Components</h2>
       <button id="btn-refresh-angular" class="sec btn-sm">Refresh</button>
@@ -231,6 +234,35 @@
     <div id="angular-list" class="angular-list">
       <p class="angular-empty">Click Refresh to scan for extracted components.</p>
     </div>
+
+    <hr class="section-divider"/>
+
+    <!-- Convert to Signal -->
+    <div class="convert-section">
+      <div class="convert-section-hdr">
+        <h3>Convert to Signal</h3>
+        <span class="convert-section-hint">Select a primitive variable declaration in the editor, then click convert.</span>
+      </div>
+      <div class="convert-row">
+        <button id="btn-convert-signal" class="primary btn-sm">Convert Selected Variable</button>
+      </div>
+      <div id="convert-signal-result" class="convert-result hidden"></div>
+    </div>
+
+    <hr class="section-divider"/>
+
+    <!-- Convert @Input / @Output -->
+    <div class="convert-section">
+      <div class="convert-section-hdr">
+        <h3>Convert @Input / @Output</h3>
+        <span class="convert-section-hint">Converts all @Input() and @Output() decorators in the active file to signal form (input() / output()).</span>
+      </div>
+      <div class="convert-row">
+        <button id="btn-convert-io" class="primary btn-sm">Convert in Current File</button>
+      </div>
+      <div id="convert-io-result" class="convert-result hidden"></div>
+    </div>
+
   </div><!-- /tab-angular -->
 
   <!-- ── Config tab ─────────────────────────────────────────────────────── -->
@@ -280,6 +312,17 @@
         <span id="audit-scope-path" class="audit-scope-path"></span>
         <button id="btn-scope-clear" class="audit-scope-clear" title="Reset to workspace">&#215;</button>
       </div>
+    </div>
+
+    <div class="audit-filter-bar">
+      <input type="text" id="audit-filter-input"
+             placeholder="Filter results by path&#8230;"
+             spellcheck="false" autocomplete="off"/>
+      <label class="audit-filter-exclude-label">
+        <input type="checkbox" id="audit-filter-exclude"/>
+        Exclude
+      </label>
+      <button id="audit-filter-clear" class="audit-filter-clear-btn hidden" title="Clear filter">&#215;</button>
     </div>
 
     <button class="audit-run-all" id="btn-audit-all"
@@ -404,6 +447,21 @@
     </div>
 
   </div><!-- /tab-audit -->
+
+  <!-- ── Forms tab ─────────────────────────────────────────────────────────── -->
+  <div id="tab-forms" class="tab-pane hidden">
+
+    <div id="forms-component-bar" class="forms-component-bar">
+      <span class="forms-component-label" id="forms-component-name">Open a .ts or .html component file</span>
+    </div>
+
+    <button id="btn-forms-analyze" class="audit-run-all">&#9654; Analyze Current Component</button>
+
+    <div id="forms-loading" class="hidden"><span class="spinner"></span> Analyzing…</div>
+    <div id="forms-summary" class="forms-summary"></div>
+    <div id="forms-list"></div>
+
+  </div><!-- /tab-forms -->
 
   <!-- Floating mark toolbar — fixed position, shown on text selection in sample -->
   <div id="mark-toolbar" class="mark-toolbar hidden">
