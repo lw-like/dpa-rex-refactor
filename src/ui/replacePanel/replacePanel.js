@@ -3,23 +3,30 @@ const vscode = acquireVsCodeApi();
 // ─── Tab switching + view-state persistence ───────────────────────────────────
 
 let currentActiveTab = 'replace';
+// Both of these are referenced before their natural declaration point in the
+// file — either from saveViewState() or updateScopeDisplay() which are called
+// during the restoreViewState IIFE. const/let have a TDZ so they must be
+// declared before the IIFE runs.
+let auditScope = { type: 'workspace' };
+const $ = id => document.getElementById(id);
 
 function saveViewState() {
     vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY, auditScope });
 }
 
+// switchTab only updates the DOM — it never writes state.
+// saveViewState is called explicitly by user-initiated actions only.
 function switchTab(tab) {
     currentActiveTab = tab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
-    saveViewState();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    btn.addEventListener('click', () => { switchTab(btn.dataset.tab); saveViewState(); });
 });
 
-// Restore tab + scroll after the script loads — survives sidebar hide/show cycles.
+// Restore tab + scroll on load — read-only, never calls saveViewState.
 (function restoreViewState() {
     const state = vscode.getState();
     if (!state) { return; }
@@ -57,8 +64,6 @@ const FLAG_TITLES = {
 };
 
 // ─── Element refs ─────────────────────────────────────────────────────────────
-
-const $ = id => document.getElementById(id);
 
 const scopeEl          = $('scope');
 const globRowEl        = $('glob-row');
@@ -1204,6 +1209,7 @@ window.addEventListener('message', ({ data: msg }) => {
                 auditScope = { type: 'files', uriStrings: msg.uriStrings, label: msg.label };
             }
             updateScopeDisplay();
+            saveViewState();
             break;
         }
 
@@ -1402,9 +1408,7 @@ angularListEl.addEventListener('click', e => {
 
 // ─── Audit tab — scope selector ───────────────────────────────────────────────
 
-// { type: 'workspace' | 'folder' | 'files', uriString?, uriStrings?, label? }
-let auditScope = { type: 'workspace' };
-
+// Pure DOM update — never calls saveViewState (called from restore path too).
 function updateScopeDisplay() {
     const isWorkspace = auditScope.type === 'workspace';
     $('btn-scope-workspace').classList.toggle('active', isWorkspace);
@@ -1417,12 +1421,12 @@ function updateScopeDisplay() {
         display.classList.remove('hidden');
         $('audit-scope-path').textContent = auditScope.label || auditScope.uriString || '';
     }
-    saveViewState(); // persist scope alongside tab + scroll
 }
 
 $('btn-scope-workspace').addEventListener('click', () => {
     auditScope = { type: 'workspace' };
     updateScopeDisplay();
+    saveViewState();
 });
 
 $('btn-scope-folder').addEventListener('click', () => {
@@ -1436,6 +1440,7 @@ $('btn-scope-files').addEventListener('click', () => {
 $('btn-scope-clear').addEventListener('click', () => {
     auditScope = { type: 'workspace' };
     updateScopeDisplay();
+    saveViewState();
 });
 
 // ─── Audit tab ────────────────────────────────────────────────────────────────
