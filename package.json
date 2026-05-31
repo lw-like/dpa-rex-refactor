@@ -206,6 +206,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
+    "vscode:install": "npm install && npm run vscode:prepublish && vsce package && code --install-extension dpa-rex-refacror-0.1.0.vsix",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
