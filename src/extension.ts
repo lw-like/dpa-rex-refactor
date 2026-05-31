@@ -19,6 +19,7 @@ import { registerLargeListCommand } from './angular/largeListScanner';
 import { registerUnsafeToSignalCommand } from './angular/unsafeToSignalScanner';
 import { registerNestedSubscriptionCommand } from './angular/nestedSubscriptionScanner';
 import { registerEagerRouteCommand } from './angular/eagerRouteScanner';
+import { registerMutabilityCommand } from './angular/mutabilityScanner';
 
 let store: PatternStore;
 let replaceView: ReplaceView;
@@ -64,6 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
         registerUnsafeToSignalCommand(context, diagnostics),
         registerNestedSubscriptionCommand(context, diagnostics),
         registerEagerRouteCommand(context, diagnostics),
+        registerMutabilityCommand(context, diagnostics),
     );
 }
 

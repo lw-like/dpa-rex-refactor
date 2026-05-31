@@ -2,39 +2,9 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { AuditFinding } from './auditTypes';
 import { AuditScope, findAuditFiles } from './auditScope';
+import { extractClassBodies } from './mutabilityDetector';
 
 const EXCLUDE_GLOB = '**/node_modules/**,**/dist/**,**/out/**';
-
-const CLASS_START_RE = /\bclass\s+(\w+)/;
-
-function extractClassBodies(lines: string[]): Array<{ className: string; startLine: number; endLine: number }> {
-    const results: Array<{ className: string; startLine: number; endLine: number }> = [];
-
-    for (let i = 0; i < lines.length; i++) {
-        const m = CLASS_START_RE.exec(lines[i]);
-        if (!m) { continue; }
-
-        const className = m[1];
-        let depth = 0;
-        let classEndLine = i;
-
-        for (let j = i; j < lines.length; j++) {
-            const ln = lines[j];
-            for (const ch of ln) {
-                if (ch === '{') { depth++; }
-                else if (ch === '}') { depth--; }
-            }
-            if (depth <= 0 && j > i) {
-                classEndLine = j;
-                break;
-            }
-        }
-
-        results.push({ className, startLine: i, endLine: classEndLine });
-    }
-
-    return results;
-}
 
 function escapeRe(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

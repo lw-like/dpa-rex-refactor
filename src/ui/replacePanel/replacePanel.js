@@ -3,12 +3,13 @@ const vscode = acquireVsCodeApi();
 // ─── Tab switching + view-state persistence ───────────────────────────────────
 
 let currentActiveTab = 'replace';
-// Both of these are referenced before their natural declaration point in the
-// file — either from saveViewState() or updateScopeDisplay() which are called
-// during the restoreViewState IIFE. const/let have a TDZ so they must be
-// declared before the IIFE runs.
+// Declared here (before the restoreViewState IIFE) to avoid TDZ crashes —
+// saveViewState() and updateScopeDisplay() both reference these at startup.
 let auditScope = { type: 'workspace' };
 const $ = id => document.getElementById(id);
+// URI of the file currently open in the VS Code editor (pushed by the extension).
+// Used to switch "Go to issue" ↔ "Apply Fix" buttons live.
+let currentEditorUri = '';
 
 function saveViewState() {
     vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY, auditScope });
@@ -1202,6 +1203,12 @@ window.addEventListener('message', ({ data: msg }) => {
             break;
         }
 
+        case 'editorContext': {
+            currentEditorUri = msg.uri || '';
+            updateFindingButtons();
+            break;
+        }
+
         case 'auditScopeSelected': {
             if (msg.scopeType === 'folder' && msg.uriString) {
                 auditScope = { type: 'folder', uriString: msg.uriString, label: msg.label };
@@ -1406,6 +1413,63 @@ angularListEl.addEventListener('click', e => {
     if (item) { vscode.postMessage({ type: 'openTodoReview', fsPath: item.dataset.path }); }
 });
 
+// ─── Audit — common action component ─────────────────────────────────────────
+//
+// Every finding that has an auto-fix renders two mutually exclusive buttons:
+//   "Go to issue"  — default; navigates the editor to the file + line
+//   "Apply Fix"    — shown only when the active editor is already on that file
+//
+// updateFindingButtons() is called whenever the active editor changes so all
+// rendered findings switch state without re-rendering.
+
+/**
+ * Renders the action area for a single finding.
+ *
+ * "Go to issue" is ALWAYS the initial state — regardless of whether the file
+ * is already open. This guarantees two consecutive clicks in the same spot:
+ *   click 1 → "Go to issue"  navigates editor to the exact line
+ *   click 2 → "Apply Fix"    applies the fix
+ *
+ * The button switches synchronously on click (no async round-trip needed).
+ * updateFindingButtons() still handles the secondary case where the user
+ * opens the file via the location link instead of the Go-to button.
+ */
+function renderFindingActions(f, idx) {
+    if (!f.originalText || !f.fixText) { return ''; }
+    return '<div class="finding-actions" data-finding-uri="' + esc(f.uri) + '">' +
+        '<button class="finding-goto"' +
+        ' data-uri="' + esc(f.uri) + '"' +
+        ' data-line="' + f.line + '"' +
+        '>Go to issue</button>' +
+        '<button class="finding-apply hidden"' +
+        ' data-uri="' + esc(f.uri) + '"' +
+        ' data-start-line="' + f.line + '"' +
+        ' data-start-col="' + f.col + '"' +
+        ' data-end-line="' + f.endLine + '"' +
+        ' data-end-col="' + f.endCol + '"' +
+        ' data-fix-text="' + esc(f.fixText) + '"' +
+        ' data-index="' + idx + '"' +
+        ' data-code="' + esc(f.code) + '"' +
+        '>Apply Fix</button>' +
+        '</div>';
+}
+
+/**
+ * Secondary path: called when the active editor URI changes (e.g. user opens
+ * the file via the location link). Reveals "Apply Fix" for any finding whose
+ * file is now open, mirroring the Go-to button behaviour.
+ */
+function updateFindingButtons() {
+    document.querySelectorAll('.finding-actions[data-finding-uri]').forEach(actions => {
+        const inFile   = actions.dataset.findingUri === currentEditorUri;
+        const gotoBtn  = actions.querySelector('.finding-goto');
+        const applyBtn = actions.querySelector('.finding-apply');
+        if (!inFile) { return; } // only reveal Apply Fix, never re-hide it
+        if (gotoBtn)  { gotoBtn.classList.add('hidden'); }
+        if (applyBtn) { applyBtn.classList.remove('hidden'); }
+    });
+}
+
 // ─── Audit tab — scope selector ───────────────────────────────────────────────
 
 // Pure DOM update — never calls saveViewState (called from restore path too).
@@ -1462,6 +1526,7 @@ const AUDIT_COMMANDS = [
     'dpa-rex-refacror.detectUnmanagedSubscriptions',
     'dpa-rex-refacror.detectUnmanagedTimersAndListeners',
     'dpa-rex-refacror.detectUnoptimizedImages',
+    'dpa-rex-refacror.detectMutabilityIssues',
 ];
 
 /** Returns the results div for a given command, or null. */
@@ -1498,6 +1563,14 @@ function renderAuditFindings(cmd, findings) {
             const locText = esc(f.file) + ':' + f.line;
             const hasFix = f.originalText !== null && f.fixText !== null;
 
+            // Risk badge — present only on findings that carry risk data (A1)
+            const risksHtml = Array.isArray(f.risks) && f.risks.length > 0
+                ? '<span class="risk-badge" title="' + esc(f.risks.join('\n')) + '">&#9888; ' +
+                  f.risks.length + (f.risks.length === 1 ? ' risk' : ' risks') + '</span>'
+                : Array.isArray(f.risks) && f.risks.length === 0
+                    ? '<span class="risk-badge risk-safe" title="No detected risks for this component">&#10003; safe</span>'
+                    : '';
+
             const diffHtml = hasFix
                 ? '<div class="finding-diff">' +
                   '<div class="diff-del">- ' + esc(f.originalText) + '</div>' +
@@ -1505,19 +1578,7 @@ function renderAuditFindings(cmd, findings) {
                   '</div>'
                 : '';
 
-            const actionsHtml = hasFix
-                ? '<div class="finding-actions">' +
-                  '<button class="finding-apply"' +
-                  ' data-uri="' + esc(f.uri) + '"' +
-                  ' data-start-line="' + f.line + '"' +
-                  ' data-start-col="' + f.col + '"' +
-                  ' data-end-line="' + f.endLine + '"' +
-                  ' data-end-col="' + f.endCol + '"' +
-                  ' data-fix-text="' + esc(f.fixText) + '"' +
-                  ' data-index="' + idx + '"' +
-                  '>Apply Fix</button>' +
-                  '</div>'
-                : '';
+            const actionsHtml = renderFindingActions(f, idx);
 
             const suggestionHtml = f.fixDescription
                 ? '<div class="finding-suggestion">Suggestion: ' + esc(f.fixDescription) + '</div>'
@@ -1530,6 +1591,7 @@ function renderAuditFindings(cmd, findings) {
                 ' data-line="' + f.line + '"' +
                 '>' + locText + '</a>' +
                 '<span class="finding-code">' + esc(f.code) + '</span>' +
+                risksHtml +
                 '</div>' +
                 '<div class="finding-msg">' + esc(f.message) + '</div>' +
                 diffHtml + actionsHtml + suggestionHtml +
@@ -1547,19 +1609,26 @@ function renderAuditFindings(cmd, findings) {
         div.classList.toggle('collapsed');
     });
 
-    // Attach click handlers for location links
+    // Location links (file:line header)
     div.querySelectorAll('.finding-loc').forEach(link => {
         link.addEventListener('click', e => {
             e.preventDefault();
-            vscode.postMessage({
-                type: 'openFile',
-                uri: link.dataset.uri,
-                line: Number(link.dataset.line),
-            });
+            vscode.postMessage({ type: 'openFile', uri: link.dataset.uri, line: Number(link.dataset.line) });
         });
     });
 
-    // Attach click handlers for Apply Fix buttons
+    // "Go to issue" — switches to "Apply Fix" immediately on click (same position,
+    // no mouse movement needed), then navigates the editor to the exact line.
+    div.querySelectorAll('.finding-goto').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const actions = btn.closest('.finding-actions');
+            btn.classList.add('hidden');
+            actions.querySelector('.finding-apply')?.classList.remove('hidden');
+            vscode.postMessage({ type: 'openFile', uri: btn.dataset.uri, line: Number(btn.dataset.line) });
+        });
+    });
+
+    // "Apply Fix"
     div.querySelectorAll('.finding-apply').forEach(btn => {
         btn.addEventListener('click', () => {
             vscode.postMessage({
@@ -1571,6 +1640,7 @@ function renderAuditFindings(cmd, findings) {
                 endCol: Number(btn.dataset.endCol),
                 fixText: btn.dataset.fixText,
                 findingIndex: Number(btn.dataset.index),
+                auditCode: btn.dataset.code,
             });
         });
     });

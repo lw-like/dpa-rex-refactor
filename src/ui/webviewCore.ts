@@ -29,6 +29,7 @@ import { scanLargeRenderedLists } from '../angular/largeListScanner';
 import { scanUnsafeToSignal } from '../angular/unsafeToSignalScanner';
 import { scanNestedSubscriptions } from '../angular/nestedSubscriptionScanner';
 import { scanEagerRoutes } from '../angular/eagerRouteScanner';
+import { scanMutabilityIssues } from '../angular/mutabilityScanner';
 
 export interface WebviewMessage {
     type: string;
@@ -60,6 +61,7 @@ export interface WebviewMessage {
     endCol?: number;
     fixText?: string;
     findingIndex?: number;
+    auditCode?: string;
     // Audit scope (distinct from replace-engine scope which is a string)
     auditScopeData?: { type: 'workspace' | 'folder' | 'files'; uriString?: string; uriStrings?: string[] };
 }
@@ -617,6 +619,21 @@ export class MessageHandler {
                     );
                     const edit = new vscode.WorkspaceEdit();
                     edit.replace(uri, range, msg.fixText);
+
+                    // A1: ensure ChangeDetectionStrategy is imported in the same edit
+                    if (msg.auditCode === 'A1') {
+                        const text = doc.getText();
+                        if (!/\bChangeDetectionStrategy\b/.test(text)) {
+                            const coreImport = /import\s*\{([^}]+)\}\s*from\s*['"]@angular\/core['"]/m.exec(text);
+                            if (coreImport) {
+                                const closingBrace = text.indexOf('}', coreImport.index + coreImport[0].indexOf('{'));
+                                edit.insert(uri, doc.positionAt(closingBrace), ', ChangeDetectionStrategy');
+                            } else {
+                                edit.insert(uri, new vscode.Position(0, 0), "import { ChangeDetectionStrategy } from '@angular/core';\n");
+                            }
+                        }
+                    }
+
                     const success = await vscode.workspace.applyEdit(edit);
                     if (success) {
                         this.post({ type: 'auditFixApplied', uri: msg.uri, findingIndex: msg.findingIndex });
@@ -746,6 +763,8 @@ export class MessageHandler {
                 return scanNestedSubscriptions(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectEagerlyLoadedRoutes':
                 return scanEagerRoutes(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectMutabilityIssues':
+                return scanMutabilityIssues(diags, silentProgress, token, scope);
             default:
                 return [];
         }

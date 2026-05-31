@@ -29,7 +29,8 @@
     "onCommand:dpa-rex-refacror.detectLargeRenderedLists",
     "onCommand:dpa-rex-refacror.detectUnsafeToSignal",
     "onCommand:dpa-rex-refacror.detectNestedSubscriptions",
-    "onCommand:dpa-rex-refacror.detectEagerlyLoadedRoutes"
+    "onCommand:dpa-rex-refacror.detectEagerlyLoadedRoutes",
+    "onCommand:dpa-rex-refacror.detectMutabilityIssues"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -127,6 +128,10 @@
       {
         "command": "dpa-rex-refacror.detectEagerlyLoadedRoutes",
         "title": "Angular Perf: Detect Eagerly Loaded Routes"
+      },
+      {
+        "command": "dpa-rex-refacror.detectMutabilityIssues",
+        "title": "Angular Audit: Detect Mutability Issues"
       }
     ],
     "configuration": {
