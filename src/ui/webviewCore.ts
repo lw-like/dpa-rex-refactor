@@ -11,12 +11,32 @@ import { extractPatterns } from '../patternExtractor';
 import { TodoData } from '../angular/componentGenerator';
 import { TodoReviewPanel } from './todoReviewPanel';
 import { LAST_EXTRACTION_KEY, LastExtraction } from '../angular/extractCommand';
+import { AuditFinding } from '../angular/auditTypes';
+import { AuditScope } from '../angular/auditScope';
+import { scanChangeDetection } from '../angular/changeDetectionScanner';
+import { scanShareReplayLeak } from '../angular/rxjsLeakScanner';
+import { scanListTracking } from '../angular/listTrackingScanner';
+import { scanHeavyImports } from '../angular/heavyImportScanner';
+import { scanNestedSwitchMap } from '../angular/nestedSwitchMapScanner';
+import { scanTemplateFunctionCalls } from '../angular/templateFunctionCallScanner';
+import { scanHttpInEffect } from '../angular/httpInEffectScanner';
+import { scanUnmanagedSubscriptions } from '../angular/unmanagedSubscriptionScanner';
+import { scanUnmanagedTimers } from '../angular/unmanagedTimerScanner';
+import { scanUnoptimizedImages } from '../angular/unoptimizedImageScanner';
+import { scanManualChangeDetection } from '../angular/manualChangeDetectionScanner';
+import { scanRepeatedTemplateExpressions } from '../angular/repeatedExpressionScanner';
+import { scanLargeRenderedLists } from '../angular/largeListScanner';
+import { scanUnsafeToSignal } from '../angular/unsafeToSignalScanner';
+import { scanNestedSubscriptions } from '../angular/nestedSubscriptionScanner';
+import { scanEagerRoutes } from '../angular/eagerRouteScanner';
 
 export interface WebviewMessage {
     type: string;
     fsPath?: string;
     value?: boolean;
     name?: string;
+    command?: string;
+    commands?: string[];
     steps?: PipelineStep[];
     // Single-step compat (step 0 values, sent alongside steps[]):
     pattern?: string;
@@ -33,6 +53,15 @@ export interface WebviewMessage {
     line?: number;
     column?: number;
     uriList?: string[];
+    // Audit fix fields
+    startLine?: number;
+    startCol?: number;
+    endLine?: number;
+    endCol?: number;
+    fixText?: string;
+    findingIndex?: number;
+    // Audit scope (distinct from replace-engine scope which is a string)
+    auditScopeData?: { type: 'workspace' | 'folder' | 'files'; uriString?: string; uriStrings?: string[] };
 }
 
 export class MessageHandler {
@@ -43,6 +72,7 @@ export class MessageHandler {
         private store: PatternStore,
         private readonly post: (msg: object) => void,
         private readonly context: vscode.ExtensionContext,
+        private readonly diagnostics: vscode.DiagnosticCollection,
     ) {}
 
     dispose(): void {
@@ -306,7 +336,9 @@ export class MessageHandler {
                 const editor = vscode.window.activeTextEditor;
                 if (!editor || !msg.pattern) { this.post({ type: 'liveMatchCountResult', count: 0, fileName: '' }); break; }
                 try {
-                    const text = editor.document.getText();
+                    // Cap at 200 k chars — a catastrophically backtracking pattern on a
+                    // large file would otherwise freeze the extension host indefinitely.
+                    const text = editor.document.getText().slice(0, 200_000);
                     const flags = (msg.flags ?? 'gi').includes('g') ? (msg.flags ?? 'gi') : (msg.flags ?? 'gi') + 'g';
                     const count = (text.match(new RegExp(msg.pattern, flags)) ?? []).length;
                     this.post({ type: 'liveMatchCountResult', count, fileName: vscode.workspace.asRelativePath(editor.document.uri) });
@@ -357,6 +389,16 @@ export class MessageHandler {
                     let count = 0;
                     for (const item of data) {
                         if (typeof item.name === 'string' && item.name.trim()) {
+                            // Validate step structure before saving — prevents runtime crashes
+                            // from importing malformed JSON with non-string pattern/flags fields.
+                            const steps: unknown[] = Array.isArray(item.steps) ? item.steps : [];
+                            const stepsValid = steps.every(
+                                (s) => s !== null && typeof s === 'object' &&
+                                        typeof (s as Record<string, unknown>).pattern === 'string' &&
+                                        typeof (s as Record<string, unknown>).flags === 'string' &&
+                                        typeof (s as Record<string, unknown>).replacement === 'string'
+                            );
+                            if (steps.length > 0 && !stepsValid) { continue; }
                             this.store.save(item as SavedPattern);
                             count++;
                         }
@@ -468,6 +510,125 @@ export class MessageHandler {
                 break;
             }
 
+            case 'selectAuditFolder': {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: false,
+                    canSelectFolders: true,
+                    canSelectMany: false,
+                    openLabel: 'Audit this folder',
+                });
+                if (picked?.length) {
+                    this.post({
+                        type: 'auditScopeSelected',
+                        scopeType: 'folder',
+                        uriString: picked[0].toString(),
+                        label: vscode.workspace.asRelativePath(picked[0]) || picked[0].fsPath,
+                    });
+                }
+                break;
+            }
+
+            case 'selectAuditFiles': {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: true,
+                    canSelectFolders: false,
+                    canSelectMany: true,
+                    filters: { 'TypeScript & HTML': ['ts', 'html'] },
+                    openLabel: 'Audit these files',
+                });
+                if (picked?.length) {
+                    const label = picked.length === 1
+                        ? vscode.workspace.asRelativePath(picked[0])
+                        : `${picked.length} files`;
+                    this.post({
+                        type: 'auditScopeSelected',
+                        scopeType: 'files',
+                        uriStrings: picked.map(u => u.toString()),
+                        label,
+                    });
+                }
+                break;
+            }
+
+            case 'runAudit': {
+                if (!msg.command) { break; }
+                const auditCmd = msg.command;
+                const auditScope = this.parseScope(msg);
+                this.post({ type: 'auditScanStart', command: auditCmd });
+                await vscode.window.withProgress(
+                    {
+                        location: vscode.ProgressLocation.Notification,
+                        title: 'Angular Audit: Scanning…',
+                        cancellable: true,
+                    },
+                    async (_progress, token) => {
+                        const findings = await this.runScanByCommand(auditCmd, token, this.diagnostics, auditScope);
+                        this.post({ type: 'auditResult', command: auditCmd, findings });
+                    }
+                );
+                break;
+            }
+
+            case 'runAuditAll': {
+                const allScope = this.parseScope(msg);
+                // Clear the Problems panel once before all scans.  Without this, each
+                // scanner's internal diagnostics.clear() wipes the previous scanners'
+                // results, leaving only the last scanner visible in the Problems panel.
+                this.diagnostics.clear();
+                // A proxy that swallows per-scanner clear() calls — each individual
+                // scanner still calls clear() at the top of its function, but during
+                // Run All we want all results to accumulate.
+                const accumDiags = new Proxy(this.diagnostics, {
+                    get(target, prop) {
+                        if (prop === 'clear') { return () => { /* no-op during Run All */ }; }
+                        const v = (target as unknown as Record<string, unknown>)[prop as string];
+                        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+                    },
+                }) as vscode.DiagnosticCollection;
+                const cmds = msg.commands ?? [];
+                for (const cmd of cmds) {
+                    this.post({ type: 'auditScanStart', command: cmd });
+                    await vscode.window.withProgress(
+                        {
+                            location: vscode.ProgressLocation.Notification,
+                            title: 'Angular Audit: Scanning…',
+                            cancellable: true,
+                        },
+                        async (_progress, token) => {
+                            const findings = await this.runScanByCommand(cmd, token, accumDiags, allScope);
+                            this.post({ type: 'auditResult', command: cmd, findings });
+                        }
+                    );
+                }
+                break;
+            }
+
+            case 'applyAuditFix': {
+                if (!msg.uri || msg.startLine === undefined || msg.startCol === undefined ||
+                    msg.endLine === undefined || msg.endCol === undefined || !msg.fixText) {
+                    break;
+                }
+                try {
+                    const uri = vscode.Uri.parse(msg.uri);
+                    const doc = await vscode.workspace.openTextDocument(uri);
+                    const range = new vscode.Range(
+                        msg.startLine - 1, msg.startCol,
+                        msg.endLine - 1, msg.endCol,
+                    );
+                    const edit = new vscode.WorkspaceEdit();
+                    edit.replace(uri, range, msg.fixText);
+                    const success = await vscode.workspace.applyEdit(edit);
+                    if (success) {
+                        this.post({ type: 'auditFixApplied', uri: msg.uri, findingIndex: msg.findingIndex });
+                    } else {
+                        this.postError('Could not apply fix — the file may have changed.');
+                    }
+                } catch (e: unknown) {
+                    this.postError(`Apply fix failed: ${e instanceof Error ? e.message : String(e)}`);
+                }
+                break;
+            }
+
             case 'loadAngularTodos': {
                 const EXCLUDE = '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/build/**}';
                 const todoFiles = await vscode.workspace.findFiles('**/*.todo.json', EXCLUDE);
@@ -529,6 +690,64 @@ export class MessageHandler {
                 }
                 break;
             }
+        }
+    }
+
+    private parseScope(msg: WebviewMessage): AuditScope {
+        const s = msg.auditScopeData;
+        if (!s || s.type === 'workspace') { return { type: 'workspace' }; }
+        if (s.type === 'folder' && s.uriString) {
+            return { type: 'folder', folderUri: vscode.Uri.parse(s.uriString) };
+        }
+        if (s.type === 'files' && s.uriStrings?.length) {
+            return { type: 'files', fileUris: s.uriStrings.map(u => vscode.Uri.parse(u)) };
+        }
+        return { type: 'workspace' };
+    }
+
+    private async runScanByCommand(
+        command: string,
+        token: vscode.CancellationToken,
+        diags: vscode.DiagnosticCollection = this.diagnostics,
+        scope: AuditScope = { type: 'workspace' },
+    ): Promise<AuditFinding[]> {
+        // Silent progress reporter — the withProgress notification handles user feedback
+        const silentProgress = { report: () => { /* no-op */ } };
+        switch (command) {
+            case 'dpa-rex-refacror.detectDefaultChangeDetection':
+                return scanChangeDetection(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectShareReplayLeak':
+                return scanShareReplayLeak(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectListTracking':
+                return scanListTracking(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectHeavyImports':
+                return scanHeavyImports(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectNestedSwitchMap':
+                return scanNestedSwitchMap(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectTemplateFunctionCalls':
+                return scanTemplateFunctionCalls(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectHttpInEffect':
+                return scanHttpInEffect(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectUnmanagedSubscriptions':
+                return scanUnmanagedSubscriptions(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectUnmanagedTimersAndListeners':
+                return scanUnmanagedTimers(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectUnoptimizedImages':
+                return scanUnoptimizedImages(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectManualChangeDetection':
+                return scanManualChangeDetection(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectRepeatedExpressions':
+                return scanRepeatedTemplateExpressions(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectLargeRenderedLists':
+                return scanLargeRenderedLists(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectUnsafeToSignal':
+                return scanUnsafeToSignal(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectNestedSubscriptions':
+                return scanNestedSubscriptions(diags, silentProgress, token, scope);
+            case 'dpa-rex-refacror.detectEagerlyLoadedRoutes':
+                return scanEagerRoutes(diags, silentProgress, token, scope);
+            default:
+                return [];
         }
     }
 

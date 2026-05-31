@@ -1131,6 +1131,302 @@ mark {
   transition: width 0.2s;
 }
 
+/* ── Audit tab ───────────────────────────────────────────────────────────── */
+
+/* Scope selector bar */
+.audit-scope-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.audit-scope-label {
+  font-size: 0.78em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.audit-scope-btns {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.audit-scope-opt {
+  padding: 3px 9px;
+  font-size: 0.82em;
+  border: 1px solid var(--vscode-button-secondaryBackground, var(--vscode-panel-border));
+  background: transparent;
+  color: var(--vscode-foreground);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.audit-scope-opt:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.audit-scope-opt.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+.audit-scope-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--vscode-inputValidation-infoBackground, var(--vscode-editor-inactiveSelectionBackground));
+  border: 1px solid var(--vscode-inputValidation-infoBorder, var(--vscode-panel-border));
+  border-radius: 3px;
+  font-size: 0.82em;
+}
+
+.audit-scope-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.audit-scope-clear {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: 1em;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.audit-scope-clear:hover { color: var(--vscode-foreground); }
+
+.audit-intro {
+  font-size: 0.84em;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.audit-run-all {
+  width: 100%;
+  padding: 8px 14px;
+  margin-bottom: 16px;
+  font-size: 0.9em;
+  font-weight: 600;
+  text-align: center;
+}
+
+.audit-group {
+  margin-bottom: 14px;
+}
+
+.audit-group-title {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+}
+
+.audit-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #ccc);
+  border: none;
+  border-radius: 2px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  text-align: left;
+  gap: 3px;
+  white-space: normal;
+}
+.audit-btn:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+.audit-btn:last-child { margin-bottom: 0; }
+
+.audit-label {
+  font-size: 0.88em;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.audit-desc {
+  font-size: 0.78em;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.4;
+}
+
+/* ── Audit results / findings ────────────────────────────────────────────── */
+
+.audit-results { margin-top: 6px; margin-bottom: 10px; }
+.audit-results.hidden { display: none; }
+
+/* ── results toggle header ─────────────────────────────────────────────── */
+.audit-results-hdr {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 2px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--vscode-panel-border);
+  margin-top: 2px;
+}
+
+.audit-results-hdr:hover .audit-results-count {
+  color: var(--vscode-foreground);
+}
+
+.audit-results-chevron {
+  font-size: 0.7em;
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.audit-results.collapsed .audit-results-chevron {
+  transform: rotate(-90deg);
+}
+
+.audit-results-count {
+  font-size: 0.82em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.audit-ok-inline {
+  color: var(--vscode-testing-iconPassed, #4caf50);
+}
+
+.audit-results-body {
+  padding-top: 2px;
+}
+
+.audit-results.collapsed .audit-results-body {
+  display: none;
+}
+
+.audit-ok {
+  color: var(--vscode-gitDecoration-addedResourceForeground);
+  font-size: 0.84em;
+  padding: 6px 0;
+  margin: 0;
+}
+
+.audit-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.84em;
+  padding: 6px 0;
+}
+
+.audit-finding {
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 2px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+}
+
+.finding-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.finding-loc {
+  font-size: 0.82em;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  text-decoration: none;
+  font-family: var(--vscode-editor-font-family, monospace);
+  cursor: pointer;
+  word-break: break-all;
+}
+.finding-loc:hover { text-decoration: underline; }
+
+.finding-code {
+  font-size: 0.75em;
+  font-weight: 600;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #fff);
+  padding: 1px 5px;
+  border-radius: 2px;
+  white-space: nowrap;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.finding-msg {
+  font-size: 0.82em;
+  color: var(--vscode-foreground);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.finding-diff {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.8em;
+  margin-bottom: 6px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.diff-del {
+  background: rgba(241, 76, 76, 0.15);
+  color: var(--vscode-errorForeground, #f14c4c);
+  padding: 2px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diff-add {
+  background: rgba(115, 201, 145, 0.15);
+  color: var(--vscode-gitDecoration-addedResourceForeground, #73c991);
+  padding: 2px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.finding-suggestion {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.finding-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+}
+
+.finding-apply {
+  font-size: 0.8em;
+  padding: 3px 10px;
+}
+
+.finding-applied {
+  opacity: 0.45;
+}
+.finding-applied .finding-msg,
+.finding-applied .finding-loc {
+  text-decoration: line-through;
+}
+
 /* ── Compact mode — narrow sidebar ───────────────────────────────────────── */
 body.compact { padding: 8px; }
 body.compact .tab-bar { margin: -8px -8px 12px -8px; }
