@@ -211,6 +211,10 @@
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
   },
+  "overrides": {
+    "minimatch": "9.0.9",
+    "serialize-javascript": "7.0.5"
+  },
   "devDependencies": {
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.0",

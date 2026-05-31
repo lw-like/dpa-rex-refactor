@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { AuditFinding } from './auditTypes';
+import { AuditScope, findAuditFiles } from './auditScope';
 
 const EXCLUDE_GLOB = '**/node_modules/**,**/dist/**,**/out/**';
 
@@ -14,10 +15,11 @@ export async function scanEagerRoutes(
     diagnostics: vscode.DiagnosticCollection,
     progress: vscode.Progress<{ message?: string; increment?: number }>,
     token: vscode.CancellationToken,
+    scope?: AuditScope,
 ): Promise<AuditFinding[]> {
     diagnostics.clear();
 
-    const files = await vscode.workspace.findFiles('**/*.ts', `{${EXCLUDE_GLOB}}`);
+    const files = await findAuditFiles('ts', scope);
     const total = files.length;
     let scanned = 0;
     const findings: AuditFinding[] = [];

@@ -1133,6 +1133,80 @@ mark {
 
 /* ── Audit tab ───────────────────────────────────────────────────────────── */
 
+/* Scope selector bar */
+.audit-scope-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.audit-scope-label {
+  font-size: 0.78em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.audit-scope-btns {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.audit-scope-opt {
+  padding: 3px 9px;
+  font-size: 0.82em;
+  border: 1px solid var(--vscode-button-secondaryBackground, var(--vscode-panel-border));
+  background: transparent;
+  color: var(--vscode-foreground);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.audit-scope-opt:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.audit-scope-opt.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+.audit-scope-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--vscode-inputValidation-infoBackground, var(--vscode-editor-inactiveSelectionBackground));
+  border: 1px solid var(--vscode-inputValidation-infoBorder, var(--vscode-panel-border));
+  border-radius: 3px;
+  font-size: 0.82em;
+}
+
+.audit-scope-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.audit-scope-clear {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: 1em;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.audit-scope-clear:hover { color: var(--vscode-foreground); }
+
 .audit-intro {
   font-size: 0.84em;
   color: var(--vscode-descriptionForeground);
@@ -1199,6 +1273,50 @@ mark {
 
 .audit-results { margin-top: 6px; margin-bottom: 10px; }
 .audit-results.hidden { display: none; }
+
+/* ── results toggle header ─────────────────────────────────────────────── */
+.audit-results-hdr {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 2px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--vscode-panel-border);
+  margin-top: 2px;
+}
+
+.audit-results-hdr:hover .audit-results-count {
+  color: var(--vscode-foreground);
+}
+
+.audit-results-chevron {
+  font-size: 0.7em;
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.audit-results.collapsed .audit-results-chevron {
+  transform: rotate(-90deg);
+}
+
+.audit-results-count {
+  font-size: 0.82em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.audit-ok-inline {
+  color: var(--vscode-testing-iconPassed, #4caf50);
+}
+
+.audit-results-body {
+  padding-top: 2px;
+}
+
+.audit-results.collapsed .audit-results-body {
+  display: none;
+}
 
 .audit-ok {
   color: var(--vscode-gitDecoration-addedResourceForeground);

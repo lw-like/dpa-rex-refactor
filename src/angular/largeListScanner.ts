@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { AuditFinding } from './auditTypes';
+import { AuditScope, findAuditFiles } from './auditScope';
 
 const EXCLUDE_GLOB = '**/node_modules/**,**/dist/**,**/out/**';
 
@@ -52,11 +53,12 @@ export async function scanLargeRenderedLists(
     diagnostics: vscode.DiagnosticCollection,
     progress: vscode.Progress<{ message?: string; increment?: number }>,
     token: vscode.CancellationToken,
+    scope?: AuditScope,
 ): Promise<AuditFinding[]> {
     diagnostics.clear();
 
-    const tsFiles = await vscode.workspace.findFiles('**/*.ts', `{${EXCLUDE_GLOB}}`);
-    const htmlFiles = await vscode.workspace.findFiles('**/*.html', `{${EXCLUDE_GLOB}}`);
+    const tsFiles = await findAuditFiles('ts', scope);
+    const htmlFiles = await findAuditFiles('html', scope);
     const total = tsFiles.length + htmlFiles.length;
     let scanned = 0;
     let flagged = 0;

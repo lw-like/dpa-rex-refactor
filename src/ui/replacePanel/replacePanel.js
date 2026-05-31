@@ -3,28 +3,36 @@ const vscode = acquireVsCodeApi();
 // ─── Tab switching + view-state persistence ───────────────────────────────────
 
 let currentActiveTab = 'replace';
+// Both of these are referenced before their natural declaration point in the
+// file — either from saveViewState() or updateScopeDisplay() which are called
+// during the restoreViewState IIFE. const/let have a TDZ so they must be
+// declared before the IIFE runs.
+let auditScope = { type: 'workspace' };
+const $ = id => document.getElementById(id);
 
 function saveViewState() {
-    vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY });
+    vscode.setState({ tab: currentActiveTab, scrollY: window.scrollY, auditScope });
 }
 
+// switchTab only updates the DOM — it never writes state.
+// saveViewState is called explicitly by user-initiated actions only.
 function switchTab(tab) {
     currentActiveTab = tab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
-    saveViewState();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    btn.addEventListener('click', () => { switchTab(btn.dataset.tab); saveViewState(); });
 });
 
-// Restore tab + scroll after the script loads — survives sidebar hide/show cycles.
+// Restore tab + scroll on load — read-only, never calls saveViewState.
 (function restoreViewState() {
     const state = vscode.getState();
     if (!state) { return; }
     if (state.tab) { switchTab(state.tab); }
     if (state.scrollY) { requestAnimationFrame(() => window.scrollTo(0, state.scrollY)); }
+    if (state.auditScope) { auditScope = state.auditScope; updateScopeDisplay(); }
 })();
 
 // Persist scroll position continuously (debounced).
@@ -56,8 +64,6 @@ const FLAG_TITLES = {
 };
 
 // ─── Element refs ─────────────────────────────────────────────────────────────
-
-const $ = id => document.getElementById(id);
 
 const scopeEl          = $('scope');
 const globRowEl        = $('glob-row');
@@ -1196,6 +1202,17 @@ window.addEventListener('message', ({ data: msg }) => {
             break;
         }
 
+        case 'auditScopeSelected': {
+            if (msg.scopeType === 'folder' && msg.uriString) {
+                auditScope = { type: 'folder', uriString: msg.uriString, label: msg.label };
+            } else if (msg.scopeType === 'files' && msg.uriStrings) {
+                auditScope = { type: 'files', uriStrings: msg.uriStrings, label: msg.label };
+            }
+            updateScopeDisplay();
+            saveViewState();
+            break;
+        }
+
         case 'auditScanStart': {
             if (msg.command) { showAuditLoading(msg.command); }
             break;
@@ -1389,6 +1406,43 @@ angularListEl.addEventListener('click', e => {
     if (item) { vscode.postMessage({ type: 'openTodoReview', fsPath: item.dataset.path }); }
 });
 
+// ─── Audit tab — scope selector ───────────────────────────────────────────────
+
+// Pure DOM update — never calls saveViewState (called from restore path too).
+function updateScopeDisplay() {
+    const isWorkspace = auditScope.type === 'workspace';
+    $('btn-scope-workspace').classList.toggle('active', isWorkspace);
+    $('btn-scope-folder').classList.toggle('active', auditScope.type === 'folder');
+    $('btn-scope-files').classList.toggle('active', auditScope.type === 'files');
+    const display = $('audit-scope-display');
+    if (isWorkspace) {
+        display.classList.add('hidden');
+    } else {
+        display.classList.remove('hidden');
+        $('audit-scope-path').textContent = auditScope.label || auditScope.uriString || '';
+    }
+}
+
+$('btn-scope-workspace').addEventListener('click', () => {
+    auditScope = { type: 'workspace' };
+    updateScopeDisplay();
+    saveViewState();
+});
+
+$('btn-scope-folder').addEventListener('click', () => {
+    vscode.postMessage({ type: 'selectAuditFolder' });
+});
+
+$('btn-scope-files').addEventListener('click', () => {
+    vscode.postMessage({ type: 'selectAuditFiles' });
+});
+
+$('btn-scope-clear').addEventListener('click', () => {
+    auditScope = { type: 'workspace' };
+    updateScopeDisplay();
+    saveViewState();
+});
+
 // ─── Audit tab ────────────────────────────────────────────────────────────────
 
 const AUDIT_COMMANDS = [
@@ -1428,60 +1482,70 @@ function renderAuditFindings(cmd, findings) {
     const div = getAuditResultsDiv(cmd);
     if (!div) { return; }
     div.classList.remove('hidden');
+    div.classList.remove('collapsed'); // always expand on fresh results
 
-    if (!findings || findings.length === 0) {
-        div.innerHTML = '<p class="audit-ok">No issues found.</p>';
-        return;
-    }
+    const count = findings ? findings.length : 0;
 
-    div.innerHTML = findings.map((f, idx) => {
-        const locText = esc(f.file) + ':' + f.line;
-        const hasFix = f.originalText !== null && f.fixText !== null;
+    // ── header row (always rendered, click toggles body) ──────────────────
+    const countHtml = count === 0
+        ? '<span class="audit-ok-inline">&#10003;&nbsp;No issues</span>'
+        : count + ' issue' + (count !== 1 ? 's' : '');
 
-        let diffHtml = '';
-        if (hasFix) {
-            diffHtml =
-                '<div class="finding-diff">' +
-                '<div class="diff-del">- ' + esc(f.originalText) + '</div>' +
-                '<div class="diff-add">+ ' + esc(f.fixText) + '</div>' +
-                '</div>';
-        }
+    // ── body content ───────────────────────────────────────────────────────
+    const bodyHtml = count === 0
+        ? '<p class="audit-ok">No issues found.</p>'
+        : findings.map((f, idx) => {
+            const locText = esc(f.file) + ':' + f.line;
+            const hasFix = f.originalText !== null && f.fixText !== null;
 
-        let actionsHtml = '';
-        if (hasFix) {
-            actionsHtml =
-                '<div class="finding-actions">' +
-                '<button class="finding-apply"' +
+            const diffHtml = hasFix
+                ? '<div class="finding-diff">' +
+                  '<div class="diff-del">- ' + esc(f.originalText) + '</div>' +
+                  '<div class="diff-add">+ ' + esc(f.fixText) + '</div>' +
+                  '</div>'
+                : '';
+
+            const actionsHtml = hasFix
+                ? '<div class="finding-actions">' +
+                  '<button class="finding-apply"' +
+                  ' data-uri="' + esc(f.uri) + '"' +
+                  ' data-start-line="' + f.line + '"' +
+                  ' data-start-col="' + f.col + '"' +
+                  ' data-end-line="' + f.endLine + '"' +
+                  ' data-end-col="' + f.endCol + '"' +
+                  ' data-fix-text="' + esc(f.fixText) + '"' +
+                  ' data-index="' + idx + '"' +
+                  '>Apply Fix</button>' +
+                  '</div>'
+                : '';
+
+            const suggestionHtml = f.fixDescription
+                ? '<div class="finding-suggestion">Suggestion: ' + esc(f.fixDescription) + '</div>'
+                : '';
+
+            return '<div class="audit-finding" data-index="' + idx + '">' +
+                '<div class="finding-hdr">' +
+                '<a class="finding-loc" style="cursor:pointer"' +
                 ' data-uri="' + esc(f.uri) + '"' +
-                ' data-start-line="' + f.line + '"' +
-                ' data-start-col="' + f.col + '"' +
-                ' data-end-line="' + f.endLine + '"' +
-                ' data-end-col="' + f.endCol + '"' +
-                ' data-fix-text="' + esc(f.fixText) + '"' +
-                ' data-index="' + idx + '"' +
-                '>Apply Fix</button>' +
+                ' data-line="' + f.line + '"' +
+                '>' + locText + '</a>' +
+                '<span class="finding-code">' + esc(f.code) + '</span>' +
+                '</div>' +
+                '<div class="finding-msg">' + esc(f.message) + '</div>' +
+                diffHtml + actionsHtml + suggestionHtml +
                 '</div>';
-        }
+        }).join('');
 
-        let suggestionHtml = '';
-        if (f.fixDescription) {
-            suggestionHtml = '<div class="finding-suggestion">Suggestion: ' + esc(f.fixDescription) + '</div>';
-        }
+    div.innerHTML =
+        '<div class="audit-results-hdr">' +
+        '<span class="audit-results-chevron">&#9660;</span>' +
+        '<span class="audit-results-count">' + countHtml + '</span>' +
+        '</div>' +
+        '<div class="audit-results-body">' + bodyHtml + '</div>';
 
-        return '<div class="audit-finding" data-index="' + idx + '">' +
-            '<div class="finding-hdr">' +
-            '<a class="finding-loc" style="cursor:pointer"' +
-            ' data-uri="' + esc(f.uri) + '"' +
-            ' data-line="' + f.line + '"' +
-            '>' + locText + '</a>' +
-            '<span class="finding-code">' + esc(f.code) + '</span>' +
-            '</div>' +
-            '<div class="finding-msg">' + esc(f.message) + '</div>' +
-            diffHtml +
-            actionsHtml +
-            suggestionHtml +
-            '</div>';
-    }).join('');
+    div.querySelector('.audit-results-hdr').addEventListener('click', () => {
+        div.classList.toggle('collapsed');
+    });
 
     // Attach click handlers for location links
     div.querySelectorAll('.finding-loc').forEach(link => {
@@ -1533,12 +1597,12 @@ document.querySelectorAll('.audit-btn').forEach(btn => {
         const cmd = btn.dataset.cmd;
         if (cmd) {
             showAuditLoading(cmd);
-            vscode.postMessage({ type: 'runAudit', command: cmd });
+            vscode.postMessage({ type: 'runAudit', command: cmd, auditScopeData: auditScope });
         }
     });
 });
 
 $('btn-audit-all').addEventListener('click', () => {
     AUDIT_COMMANDS.forEach(cmd => showAuditLoading(cmd));
-    vscode.postMessage({ type: 'runAuditAll', commands: AUDIT_COMMANDS });
+    vscode.postMessage({ type: 'runAuditAll', commands: AUDIT_COMMANDS, auditScopeData: auditScope });
 });

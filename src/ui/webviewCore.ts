@@ -12,6 +12,7 @@ import { TodoData } from '../angular/componentGenerator';
 import { TodoReviewPanel } from './todoReviewPanel';
 import { LAST_EXTRACTION_KEY, LastExtraction } from '../angular/extractCommand';
 import { AuditFinding } from '../angular/auditTypes';
+import { AuditScope } from '../angular/auditScope';
 import { scanChangeDetection } from '../angular/changeDetectionScanner';
 import { scanShareReplayLeak } from '../angular/rxjsLeakScanner';
 import { scanListTracking } from '../angular/listTrackingScanner';
@@ -59,6 +60,8 @@ export interface WebviewMessage {
     endCol?: number;
     fixText?: string;
     findingIndex?: number;
+    // Audit scope (distinct from replace-engine scope which is a string)
+    auditScopeData?: { type: 'workspace' | 'folder' | 'files'; uriString?: string; uriStrings?: string[] };
 }
 
 export class MessageHandler {
@@ -507,9 +510,50 @@ export class MessageHandler {
                 break;
             }
 
+            case 'selectAuditFolder': {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: false,
+                    canSelectFolders: true,
+                    canSelectMany: false,
+                    openLabel: 'Audit this folder',
+                });
+                if (picked?.length) {
+                    this.post({
+                        type: 'auditScopeSelected',
+                        scopeType: 'folder',
+                        uriString: picked[0].toString(),
+                        label: vscode.workspace.asRelativePath(picked[0]) || picked[0].fsPath,
+                    });
+                }
+                break;
+            }
+
+            case 'selectAuditFiles': {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: true,
+                    canSelectFolders: false,
+                    canSelectMany: true,
+                    filters: { 'TypeScript & HTML': ['ts', 'html'] },
+                    openLabel: 'Audit these files',
+                });
+                if (picked?.length) {
+                    const label = picked.length === 1
+                        ? vscode.workspace.asRelativePath(picked[0])
+                        : `${picked.length} files`;
+                    this.post({
+                        type: 'auditScopeSelected',
+                        scopeType: 'files',
+                        uriStrings: picked.map(u => u.toString()),
+                        label,
+                    });
+                }
+                break;
+            }
+
             case 'runAudit': {
                 if (!msg.command) { break; }
                 const auditCmd = msg.command;
+                const auditScope = this.parseScope(msg);
                 this.post({ type: 'auditScanStart', command: auditCmd });
                 await vscode.window.withProgress(
                     {
@@ -518,7 +562,7 @@ export class MessageHandler {
                         cancellable: true,
                     },
                     async (_progress, token) => {
-                        const findings = await this.runScanByCommand(auditCmd, token);
+                        const findings = await this.runScanByCommand(auditCmd, token, this.diagnostics, auditScope);
                         this.post({ type: 'auditResult', command: auditCmd, findings });
                     }
                 );
@@ -526,6 +570,7 @@ export class MessageHandler {
             }
 
             case 'runAuditAll': {
+                const allScope = this.parseScope(msg);
                 // Clear the Problems panel once before all scans.  Without this, each
                 // scanner's internal diagnostics.clear() wipes the previous scanners'
                 // results, leaving only the last scanner visible in the Problems panel.
@@ -550,7 +595,7 @@ export class MessageHandler {
                             cancellable: true,
                         },
                         async (_progress, token) => {
-                            const findings = await this.runScanByCommand(cmd, token, accumDiags);
+                            const findings = await this.runScanByCommand(cmd, token, accumDiags, allScope);
                             this.post({ type: 'auditResult', command: cmd, findings });
                         }
                     );
@@ -648,46 +693,59 @@ export class MessageHandler {
         }
     }
 
+    private parseScope(msg: WebviewMessage): AuditScope {
+        const s = msg.auditScopeData;
+        if (!s || s.type === 'workspace') { return { type: 'workspace' }; }
+        if (s.type === 'folder' && s.uriString) {
+            return { type: 'folder', folderUri: vscode.Uri.parse(s.uriString) };
+        }
+        if (s.type === 'files' && s.uriStrings?.length) {
+            return { type: 'files', fileUris: s.uriStrings.map(u => vscode.Uri.parse(u)) };
+        }
+        return { type: 'workspace' };
+    }
+
     private async runScanByCommand(
         command: string,
         token: vscode.CancellationToken,
         diags: vscode.DiagnosticCollection = this.diagnostics,
+        scope: AuditScope = { type: 'workspace' },
     ): Promise<AuditFinding[]> {
         // Silent progress reporter — the withProgress notification handles user feedback
         const silentProgress = { report: () => { /* no-op */ } };
         switch (command) {
             case 'dpa-rex-refacror.detectDefaultChangeDetection':
-                return scanChangeDetection(diags, silentProgress, token);
+                return scanChangeDetection(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectShareReplayLeak':
-                return scanShareReplayLeak(diags, silentProgress, token);
+                return scanShareReplayLeak(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectListTracking':
-                return scanListTracking(diags, silentProgress, token);
+                return scanListTracking(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectHeavyImports':
-                return scanHeavyImports(diags, silentProgress, token);
+                return scanHeavyImports(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectNestedSwitchMap':
-                return scanNestedSwitchMap(diags, silentProgress, token);
+                return scanNestedSwitchMap(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectTemplateFunctionCalls':
-                return scanTemplateFunctionCalls(diags, silentProgress, token);
+                return scanTemplateFunctionCalls(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectHttpInEffect':
-                return scanHttpInEffect(diags, silentProgress, token);
+                return scanHttpInEffect(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectUnmanagedSubscriptions':
-                return scanUnmanagedSubscriptions(diags, silentProgress, token);
+                return scanUnmanagedSubscriptions(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectUnmanagedTimersAndListeners':
-                return scanUnmanagedTimers(diags, silentProgress, token);
+                return scanUnmanagedTimers(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectUnoptimizedImages':
-                return scanUnoptimizedImages(diags, silentProgress, token);
+                return scanUnoptimizedImages(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectManualChangeDetection':
-                return scanManualChangeDetection(diags, silentProgress, token);
+                return scanManualChangeDetection(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectRepeatedExpressions':
-                return scanRepeatedTemplateExpressions(diags, silentProgress, token);
+                return scanRepeatedTemplateExpressions(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectLargeRenderedLists':
-                return scanLargeRenderedLists(diags, silentProgress, token);
+                return scanLargeRenderedLists(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectUnsafeToSignal':
-                return scanUnsafeToSignal(diags, silentProgress, token);
+                return scanUnsafeToSignal(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectNestedSubscriptions':
-                return scanNestedSubscriptions(diags, silentProgress, token);
+                return scanNestedSubscriptions(diags, silentProgress, token, scope);
             case 'dpa-rex-refacror.detectEagerlyLoadedRoutes':
-                return scanEagerRoutes(diags, silentProgress, token);
+                return scanEagerRoutes(diags, silentProgress, token, scope);
             default:
                 return [];
         }

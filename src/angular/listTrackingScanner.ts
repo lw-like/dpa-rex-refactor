@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { AuditFinding } from './auditTypes';
+import { AuditScope, findAuditFiles } from './auditScope';
 
 const EXCLUDE_GLOB = '**/node_modules/**,**/dist/**,**/out/**';
 
@@ -20,10 +21,11 @@ export async function scanListTracking(
     diagnostics: vscode.DiagnosticCollection,
     progress: vscode.Progress<{ message?: string; increment?: number }>,
     token: vscode.CancellationToken,
+    scope?: AuditScope,
 ): Promise<AuditFinding[]> {
     diagnostics.clear();
 
-    const files = await vscode.workspace.findFiles('**/*.html', `{${EXCLUDE_GLOB}}`);
+    const files = await findAuditFiles('html', scope);
     const total = files.length;
     let scanned = 0;
     let flagged = 0;
