@@ -10,4 +10,5 @@ export interface AuditFinding {
     originalText: string | null;  // line text to replace (null = no auto-fix)
     fixText: string | null;       // replacement text (null = no auto-fix)
     fixDescription: string;       // always present — describes the fix or suggestion
+    risks?: string[];             // A1 only — absent = not checked, [] = safe, [...] = risks found
 }

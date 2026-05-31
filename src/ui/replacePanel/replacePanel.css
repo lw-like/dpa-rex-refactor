@@ -1414,9 +1414,47 @@ mark {
   gap: 6px;
 }
 
-.finding-apply {
+.finding-apply,
+.finding-goto {
   font-size: 0.8em;
   padding: 3px 10px;
+}
+
+.finding-goto {
+  background: rgba(40, 167, 80, 0.18);
+  color: var(--vscode-testing-iconPassed, #3fb950);
+  border: 1px solid rgba(40, 167, 80, 0.45);
+}
+
+.finding-goto:hover {
+  background: rgba(40, 167, 80, 0.30);
+}
+
+.risk-badge {
+  display: inline-block;
+  font-size: 0.72em;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 5px;
+  background: rgba(255, 165, 0, 0.18);
+  border: 1px solid rgba(255, 165, 0, 0.5);
+  color: var(--vscode-foreground);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.risk-badge.risk-safe {
+  background: rgba(40, 167, 80, 0.15);
+  border-color: rgba(40, 167, 80, 0.4);
+  font-weight: 400;
+  color: var(--vscode-testing-iconPassed, #3fb950);
+}
+
+/* hidden class on inline elements must also suppress display */
+.finding-goto.hidden,
+.finding-apply.hidden {
+  display: none;
 }
 
 .finding-applied {

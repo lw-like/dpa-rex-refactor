@@ -386,6 +386,15 @@
     </div>
 
     <div class="audit-group">
+      <div class="audit-group-title">State &amp; Mutability</div>
+      <button class="audit-btn" data-cmd="dpa-rex-refacror.detectMutabilityIssues">
+        <span class="audit-label">Detect Mutability Issues</span>
+        <span class="audit-desc">Finds in-place array mutations (push/splice/sort), nested property assignments (this.obj.prop = ...), Object.assign mutations, and ActivatedRoute subscriptions that produce stale views under OnPush</span>
+      </button>
+      <div class="audit-results hidden" data-cmd="dpa-rex-refacror.detectMutabilityIssues"></div>
+    </div>
+
+    <div class="audit-group">
       <div class="audit-group-title">Images</div>
       <button class="audit-btn" data-cmd="dpa-rex-refacror.detectUnoptimizedImages">
         <span class="audit-label">Detect Images Not Using NgOptimizedImage</span>

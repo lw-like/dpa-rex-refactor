@@ -39,11 +39,33 @@ export class ReplaceView implements vscode.WebviewViewProvider {
             (msg: WebviewMessage) => this.handler!.handle(msg),
         );
 
+        const pushEditorContext = () => {
+            if (!webviewView.visible) { return; }
+            const editor = vscode.window.activeTextEditor;
+            webviewView.webview.postMessage({
+                type: 'editorContext',
+                uri: editor?.document.uri.toString() ?? '',
+            });
+        };
+
+        // Push whenever the active editor changes
+        this.extContext.subscriptions.push(
+            vscode.window.onDidChangeActiveTextEditor(() => pushEditorContext()),
+        );
+
         webviewView.onDidChangeVisibility(() => {
-            if (webviewView.visible) { this.handler!.pushHistory(); this.handler!.pushPendingPattern(); }
+            if (webviewView.visible) {
+                this.handler!.pushHistory();
+                this.handler!.pushPendingPattern();
+                pushEditorContext();
+            }
         });
 
-        setTimeout(() => { this.handler!.pushHistory(); this.handler!.pushPendingPattern(); }, 300);
+        setTimeout(() => {
+            this.handler!.pushHistory();
+            this.handler!.pushPendingPattern();
+            pushEditorContext();
+        }, 300);
     }
 
     analyzeSelection(text: string): void {

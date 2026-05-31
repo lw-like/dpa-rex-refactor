@@ -2,8 +2,40 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { AuditFinding } from './auditTypes';
 import { AuditScope, findAuditFiles } from './auditScope';
+import { collectInputFields, detectMutabilityIssues, findClassBodyRange } from './mutabilityDetector';
 
 const EXCLUDE_GLOB = '**/node_modules/**,**/dist/**,**/out/**';
+
+/** Derives the risks[] for an A1 finding using the shared mutability detector. */
+function computeOnPushRisks(lines: string[], decoratorEndLine: number): string[] {
+    const range = findClassBodyRange(lines, decoratorEndLine);
+    if (!range) { return []; }
+    const inputFields = collectInputFields(lines, range.start, range.end);
+    const issues = detectMutabilityIssues(lines, range.start, range.end, inputFields);
+
+    // Deduplicate by message prefix so the badge stays concise.
+    const seen = new Set<string>();
+    const risks: string[] = [];
+    for (const issue of issues) {
+        if (!seen.has(issue.message)) { seen.add(issue.message); risks.push(issue.message); }
+    }
+
+    // Additional class-level signals that are not line-specific (kept from original analysis)
+    const classBody = lines.slice(range.start, range.end + 1).join('\n');
+    if (/\bsetTimeout\b|\bsetInterval\b/.test(classBody)) {
+        risks.push('setTimeout / setInterval callbacks need markForCheck() or NgZone.run() under OnPush');
+    }
+    if (/detectChanges\(\)|markForCheck\(\)/.test(classBody)) {
+        risks.push('detectChanges() / markForCheck() already present — verify these still trigger correctly');
+    }
+    if (/ChangeDetectorRef/.test(classBody) && !/markForCheck\(\)/.test(classBody)) {
+        risks.push('ChangeDetectorRef injected but markForCheck() not called — may produce stale views');
+    }
+    if (/\bnew EventEmitter/.test(classBody) && !/\@Output[\s\S]{0,80}EventEmitter/.test(classBody)) {
+        risks.push('EventEmitter without @Output — if used as a state stream, OnPush will not react to it');
+    }
+    return risks;
+}
 
 export async function isZonelessApp(): Promise<boolean> {
     const configFiles = await vscode.workspace.findFiles(
@@ -63,7 +95,7 @@ export async function scanChangeDetection(
         let hasExplicitDefault = false;
         let explicitDefaultLine = -1;
 
-        const flush = () => {
+        const flush = (decoratorEndLine: number) => {
             if (decoratorStartLine < 0) { return; }
             if (hasExplicitDefault) {
                 const lineIdx = explicitDefaultLine;
@@ -80,6 +112,7 @@ export async function scanChangeDetection(
                 flagged++;
 
                 // auto-fix: replace .Default with .OnPush on that line
+                const risks1 = computeOnPushRisks(lines, decoratorEndLine);
                 findings.push({
                     uri: uri.toString(),
                     file: vscode.workspace.asRelativePath(uri),
@@ -92,34 +125,78 @@ export async function scanChangeDetection(
                     originalText: lineText,
                     fixText: lineText.replace('ChangeDetectionStrategy.Default', 'ChangeDetectionStrategy.OnPush'),
                     fixDescription: 'Replace ChangeDetectionStrategy.Default with ChangeDetectionStrategy.OnPush',
+                    risks: risks1,
                 });
             } else if (!hasChangeDetection) {
-                const lineIdx = decoratorStartLine;
-                const lineText = lines[lineIdx] ?? '';
-                const range = new vscode.Range(lineIdx, 0, lineIdx, lineText.length);
-                const diag = new vscode.Diagnostic(
-                    range,
-                    'Component has no changeDetection property — Default strategy is applied implicitly. Add ChangeDetectionStrategy.OnPush.',
-                    vscode.DiagnosticSeverity.Warning
-                );
+                const diagMsg = 'Component has no changeDetection property — Default strategy is applied implicitly. Add ChangeDetectionStrategy.OnPush.';
+
+                // Diagnostic points at the @Component({ line
+                const diagLineIdx = decoratorStartLine;
+                const diagLineText = lines[diagLineIdx] ?? '';
+                const range = new vscode.Range(diagLineIdx, 0, diagLineIdx, diagLineText.length);
+                const diag = new vscode.Diagnostic(range, diagMsg, vscode.DiagnosticSeverity.Warning);
                 diag.source = 'angular-perf';
                 diag.code = 'A1';
                 fileDiags.push(diag);
                 flagged++;
 
-                // no auto-fix — adding a property requires understanding decorator structure
+                // Find the line containing the opening `{` of the decorator object
+                let braceLineIdx = decoratorStartLine;
+                for (let k = decoratorStartLine; k < Math.min(decoratorStartLine + 5, lines.length); k++) {
+                    if (lines[k].includes('{')) { braceLineIdx = k; break; }
+                }
+                const braceLine  = lines[braceLineIdx] ?? '';
+                const braceCol   = braceLine.indexOf('{');
+                const afterBrace = braceLine.slice(braceCol + 1).trim();
+
+                let fixLineIdx: number;
+                let origText: string;
+                let fixedText: string;
+
+                // Preferred: insert changeDetection AFTER the selector property so
+                // selector stays first, which is the Angular convention.
+                let selectorLineIdx = -1;
+                for (let k = braceLineIdx + 1; k < Math.min(braceLineIdx + 30, lines.length); k++) {
+                    if (/\bselector\s*:/.test(lines[k])) { selectorLineIdx = k; break; }
+                    if (/^\s*[})]/.test(lines[k])) { break; }
+                }
+
+                if (selectorLineIdx >= 0) {
+                    const selLine = lines[selectorLineIdx];
+                    const indent  = selLine.match(/^(\s*)/)?.[1] ?? '  ';
+                    fixLineIdx = selectorLineIdx;
+                    origText   = selLine;
+                    fixedText  = `${selLine}\n${indent}changeDetection: ChangeDetectionStrategy.OnPush,`;
+                } else if (afterBrace === '') {
+                    // No selector — insert as first property (Shape 1 fallback).
+                    fixLineIdx     = braceLineIdx + 1;
+                    const nextLine = lines[fixLineIdx] ?? '';
+                    const indent   = nextLine.match(/^(\s*)/)?.[1] ?? '  ';
+                    origText  = nextLine;
+                    fixedText = `${indent}changeDetection: ChangeDetectionStrategy.OnPush,\n${nextLine}`;
+                } else {
+                    // Shape 2: `@Component({ selector: '...', ...` all on one line.
+                    fixLineIdx = braceLineIdx;
+                    origText   = braceLine;
+                    fixedText  = braceLine.slice(0, braceCol + 1) +
+                                 ' changeDetection: ChangeDetectionStrategy.OnPush,' +
+                                 braceLine.slice(braceCol + 1);
+                }
+
+                const risks2 = computeOnPushRisks(lines, decoratorEndLine);
                 findings.push({
                     uri: uri.toString(),
                     file: vscode.workspace.asRelativePath(uri),
-                    line: lineIdx + 1,
+                    line: fixLineIdx + 1,
                     col: 0,
-                    endLine: lineIdx + 1,
-                    endCol: lineText.length,
-                    message: 'Component has no changeDetection property — Default strategy is applied implicitly. Add ChangeDetectionStrategy.OnPush.',
+                    endLine: fixLineIdx + 1,
+                    endCol: origText.length,
+                    message: diagMsg,
                     code: 'A1',
-                    originalText: null,
-                    fixText: null,
-                    fixDescription: 'Add changeDetection: ChangeDetectionStrategy.OnPush to the @Component decorator',
+                    originalText: origText,
+                    fixText: fixedText,
+                    fixDescription: "Inserts changeDetection: ChangeDetectionStrategy.OnPush as the first @Component property. If ChangeDetectionStrategy is not yet imported from '@angular/core', it is added automatically.",
+                    risks: risks2,
                 });
             }
             inComponent = false;
@@ -156,7 +233,7 @@ export async function scanChangeDetection(
                 }
 
                 if (braceDepth <= 0 && decoratorStartLine >= 0) {
-                    flush();
+                    flush(i);
                 }
             }
         }
