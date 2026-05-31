@@ -1477,60 +1477,70 @@ function renderAuditFindings(cmd, findings) {
     const div = getAuditResultsDiv(cmd);
     if (!div) { return; }
     div.classList.remove('hidden');
+    div.classList.remove('collapsed'); // always expand on fresh results
 
-    if (!findings || findings.length === 0) {
-        div.innerHTML = '<p class="audit-ok">No issues found.</p>';
-        return;
-    }
+    const count = findings ? findings.length : 0;
 
-    div.innerHTML = findings.map((f, idx) => {
-        const locText = esc(f.file) + ':' + f.line;
-        const hasFix = f.originalText !== null && f.fixText !== null;
+    // ── header row (always rendered, click toggles body) ──────────────────
+    const countHtml = count === 0
+        ? '<span class="audit-ok-inline">&#10003;&nbsp;No issues</span>'
+        : count + ' issue' + (count !== 1 ? 's' : '');
 
-        let diffHtml = '';
-        if (hasFix) {
-            diffHtml =
-                '<div class="finding-diff">' +
-                '<div class="diff-del">- ' + esc(f.originalText) + '</div>' +
-                '<div class="diff-add">+ ' + esc(f.fixText) + '</div>' +
-                '</div>';
-        }
+    // ── body content ───────────────────────────────────────────────────────
+    const bodyHtml = count === 0
+        ? '<p class="audit-ok">No issues found.</p>'
+        : findings.map((f, idx) => {
+            const locText = esc(f.file) + ':' + f.line;
+            const hasFix = f.originalText !== null && f.fixText !== null;
 
-        let actionsHtml = '';
-        if (hasFix) {
-            actionsHtml =
-                '<div class="finding-actions">' +
-                '<button class="finding-apply"' +
+            const diffHtml = hasFix
+                ? '<div class="finding-diff">' +
+                  '<div class="diff-del">- ' + esc(f.originalText) + '</div>' +
+                  '<div class="diff-add">+ ' + esc(f.fixText) + '</div>' +
+                  '</div>'
+                : '';
+
+            const actionsHtml = hasFix
+                ? '<div class="finding-actions">' +
+                  '<button class="finding-apply"' +
+                  ' data-uri="' + esc(f.uri) + '"' +
+                  ' data-start-line="' + f.line + '"' +
+                  ' data-start-col="' + f.col + '"' +
+                  ' data-end-line="' + f.endLine + '"' +
+                  ' data-end-col="' + f.endCol + '"' +
+                  ' data-fix-text="' + esc(f.fixText) + '"' +
+                  ' data-index="' + idx + '"' +
+                  '>Apply Fix</button>' +
+                  '</div>'
+                : '';
+
+            const suggestionHtml = f.fixDescription
+                ? '<div class="finding-suggestion">Suggestion: ' + esc(f.fixDescription) + '</div>'
+                : '';
+
+            return '<div class="audit-finding" data-index="' + idx + '">' +
+                '<div class="finding-hdr">' +
+                '<a class="finding-loc" style="cursor:pointer"' +
                 ' data-uri="' + esc(f.uri) + '"' +
-                ' data-start-line="' + f.line + '"' +
-                ' data-start-col="' + f.col + '"' +
-                ' data-end-line="' + f.endLine + '"' +
-                ' data-end-col="' + f.endCol + '"' +
-                ' data-fix-text="' + esc(f.fixText) + '"' +
-                ' data-index="' + idx + '"' +
-                '>Apply Fix</button>' +
+                ' data-line="' + f.line + '"' +
+                '>' + locText + '</a>' +
+                '<span class="finding-code">' + esc(f.code) + '</span>' +
+                '</div>' +
+                '<div class="finding-msg">' + esc(f.message) + '</div>' +
+                diffHtml + actionsHtml + suggestionHtml +
                 '</div>';
-        }
+        }).join('');
 
-        let suggestionHtml = '';
-        if (f.fixDescription) {
-            suggestionHtml = '<div class="finding-suggestion">Suggestion: ' + esc(f.fixDescription) + '</div>';
-        }
+    div.innerHTML =
+        '<div class="audit-results-hdr">' +
+        '<span class="audit-results-chevron">&#9660;</span>' +
+        '<span class="audit-results-count">' + countHtml + '</span>' +
+        '</div>' +
+        '<div class="audit-results-body">' + bodyHtml + '</div>';
 
-        return '<div class="audit-finding" data-index="' + idx + '">' +
-            '<div class="finding-hdr">' +
-            '<a class="finding-loc" style="cursor:pointer"' +
-            ' data-uri="' + esc(f.uri) + '"' +
-            ' data-line="' + f.line + '"' +
-            '>' + locText + '</a>' +
-            '<span class="finding-code">' + esc(f.code) + '</span>' +
-            '</div>' +
-            '<div class="finding-msg">' + esc(f.message) + '</div>' +
-            diffHtml +
-            actionsHtml +
-            suggestionHtml +
-            '</div>';
-    }).join('');
+    div.querySelector('.audit-results-hdr').addEventListener('click', () => {
+        div.classList.toggle('collapsed');
+    });
 
     // Attach click handlers for location links
     div.querySelectorAll('.finding-loc').forEach(link => {

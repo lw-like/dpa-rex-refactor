@@ -1274,6 +1274,50 @@ mark {
 .audit-results { margin-top: 6px; margin-bottom: 10px; }
 .audit-results.hidden { display: none; }
 
+/* ── results toggle header ─────────────────────────────────────────────── */
+.audit-results-hdr {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 2px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--vscode-panel-border);
+  margin-top: 2px;
+}
+
+.audit-results-hdr:hover .audit-results-count {
+  color: var(--vscode-foreground);
+}
+
+.audit-results-chevron {
+  font-size: 0.7em;
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.audit-results.collapsed .audit-results-chevron {
+  transform: rotate(-90deg);
+}
+
+.audit-results-count {
+  font-size: 0.82em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.audit-ok-inline {
+  color: var(--vscode-testing-iconPassed, #4caf50);
+}
+
+.audit-results-body {
+  padding-top: 2px;
+}
+
+.audit-results.collapsed .audit-results-body {
+  display: none;
+}
+
 .audit-ok {
   color: var(--vscode-gitDecoration-addedResourceForeground);
   font-size: 0.84em;
